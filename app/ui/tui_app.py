@@ -447,7 +447,7 @@ class BybitTUIApp(App):
         height: auto;
         border: solid blue;
         padding: 1 2;
-        margin: 2 auto;
+        margin: 2 0;
     }
     
     #logs-container {
