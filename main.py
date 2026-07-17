@@ -7,6 +7,10 @@ Performance optimizations:
 - Cached datetime calls in tight loops
 - Async-safe signal handling
 - Efficient resource monitoring
+
+TUI Integration:
+- TUI runs in main thread (required for signal handling)
+- Trading loop runs in background asyncio task
 """
 
 import argparse
@@ -14,7 +18,7 @@ import asyncio
 import sys
 import threading
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -140,7 +144,7 @@ class TradingPlatform:
             
             # Update system health
             self.system_health.is_healthy = True
-            self.system_health.last_heartbeat = datetime.utcnow()
+            self.system_health.last_heartbeat = datetime.now(timezone.utc)
 
             logger.info("Initialization complete")
 
@@ -152,7 +156,7 @@ class TradingPlatform:
         """Start the trading platform."""
         logger.info("Starting platform...")
         self._running = True
-        self._start_time = datetime.utcnow()
+        self._start_time = datetime.now(timezone.utc)
 
         try:
             # Connect WebSocket if we have symbols to subscribe to
@@ -225,7 +229,7 @@ class TradingPlatform:
         self.system_health.cpu_usage_percent = psutil.cpu_percent(interval=0)
         self.system_health.memory_usage_mb = process.memory_info().rss / 1024 / 1024
         self.system_health.active_connections = self._ws_manager.subscription_count if self._ws_manager else 0
-        self.system_health.last_heartbeat = datetime.utcnow()
+        self.system_health.last_heartbeat = datetime.now(timezone.utc)
         
         # Clear and check resource limits efficiently
         issues = []
@@ -251,7 +255,7 @@ class TradingPlatform:
         if not self._start_time:
             return "0s"
         
-        delta = datetime.utcnow() - self._start_time
+        delta = datetime.now(timezone.utc) - self._start_time
         total_seconds = int(delta.total_seconds())
         
         hours = total_seconds // 3600
@@ -304,11 +308,16 @@ async def main():
         # Validate for live mode
         if config.trading.mode == "live":
             config.validate_for_live_trading()
-
-        # Run modern TUI if requested (must be done outside asyncio)
+        
+        # Run modern TUI if requested (MUST be in main thread for signal handling)
         if args.tui:
             logger.info("Starting modern Terminal User Interface...")
-            run_tui()
+            # Create platform but don't start trading loop yet
+            platform = TradingPlatform(config, enable_ui=False)
+            await platform.initialize()
+            
+            # Run TUI in main thread with platform instance
+            run_tui(platform=platform)
             return
         
         if args.ui_only:
@@ -323,7 +332,7 @@ async def main():
         # Normal operation with optional UI integration
         await platform.initialize()
         
-        # Start UI in background thread if enabled
+        # Start UI in background thread if enabled (legacy UI only)
         if enable_ui:
             ui_thread = threading.Thread(
                 target=lambda: run_ui(platform),

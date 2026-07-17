@@ -4,7 +4,7 @@ Defines all data structures used throughout the application.
 """
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Optional, Dict, Any, Callable
 from enum import Enum
 import uuid

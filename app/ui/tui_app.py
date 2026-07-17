@@ -551,9 +551,13 @@ class BybitTUIApp(App):
         self.exit()
 
 
-def main():
-    """Entry point for the TUI application"""
-    app = BybitTUIApp()
+def main(platform=None):
+    """Entry point for the TUI application
+    
+    Args:
+        platform: Optional TradingPlatform instance to integrate with
+    """
+    app = BybitTUIApp(platform=platform)
     app.run()
 
 

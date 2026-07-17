@@ -13,7 +13,7 @@ import asyncio
 import hashlib
 import hmac
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, Dict, Any, List, Callable, Tuple
 from collections import deque
 import aiohttp
@@ -352,7 +352,7 @@ class BybitAPIClient:
             symbol=symbol,
             bids=bids,
             asks=asks,
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             sequence=int(data.get("seq", 0)),
             exchange="bybit",
         )
@@ -421,7 +421,7 @@ class BybitAPIClient:
                 volume=float(item[5]),
                 turnover=float(item[6]),
                 start_time=datetime.fromtimestamp(int(item[0]) / 1000),
-                end_time=datetime.fromtimestamp((int(item[0]) + int(interval.replace("D", "1440").replace("W", "10080").replace("M", "43200")) * 60000) / 1000) if item[0].isdigit() else datetime.utcnow(),
+                end_time=datetime.fromtimestamp((int(item[0]) + int(interval.replace("D", "1440").replace("W", "10080").replace("M", "43200")) * 60000) / 1000) if item[0].isdigit() else datetime.now(timezone.utc),
                 interval=interval,
             )
             candles.append(candle)
