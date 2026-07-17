@@ -25,6 +25,7 @@ from app.core.models import SystemHealth
 from app.api.client import BybitAPIClient
 from app.exchange.websocket import WebSocketManager
 from app.ui.terminal import TradingPlatformApp, run_ui
+from app.ui.tui_app import BybitTUIApp, main as run_tui
 
 
 class TradingPlatform:
@@ -293,6 +294,7 @@ async def main():
     parser = argparse.ArgumentParser(description="Bybit AI Trading Platform")
     parser.add_argument("--no-ui", action="store_true", help="Disable terminal UI")
     parser.add_argument("--ui-only", action="store_true", help="Run UI only without trading")
+    parser.add_argument("--tui", action="store_true", help="Run modern TUI interface")
     args = parser.parse_args()
     
     try:
@@ -302,6 +304,12 @@ async def main():
         # Validate for live mode
         if config.trading.mode == "live":
             config.validate_for_live_trading()
+
+        # Run modern TUI if requested
+        if args.tui or args.ui_only:
+            logger.info("Starting modern Terminal User Interface...")
+            run_tui()
+            return
 
         # Create platform with optional UI
         enable_ui = not args.no_ui
