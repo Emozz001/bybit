@@ -5,7 +5,7 @@ Professional risk controls for position sizing, stop losses, and portfolio prote
 
 from typing import Dict, Any, List, Optional
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 
 
@@ -92,7 +92,7 @@ class RiskManager:
         self.winning_trades = 0
         self.losing_trades = 0
         self.kill_switch_active = False
-        self.last_reset_date = datetime.utcnow().date()
+        self.last_reset_date = datetime.now(timezone.utc).date()
         
         # Metrics history
         self.metrics_history: List[RiskMetrics] = []
@@ -336,7 +336,7 @@ class RiskManager:
         self.winning_trades = 0
         self.losing_trades = 0
         self.kill_switch_active = False
-        self.last_reset_date = datetime.utcnow().date()
+        self.last_reset_date = datetime.now(timezone.utc).date()
     
     def record_trade_result(self, pnl: float, is_winner: bool):
         """Record a trade result for statistics."""
@@ -350,7 +350,7 @@ class RiskManager:
     
     def _check_date_reset(self):
         """Check if date has changed and reset daily stats if needed."""
-        today = datetime.utcnow().date()
+        today = datetime.now(timezone.utc).date()
         if today != self.last_reset_date:
             self.reset_daily_stats(self.current_balance)
     
