@@ -209,6 +209,14 @@ cmd_start() {
     python3 "$SCRIPT_DIR/main.py" "$@"
 }
 
+cmd_tui() {
+    log_header "MODERN TUI INTERFACE"
+    
+    activate_venv
+    log_info "Launching modern Terminal User Interface..."
+    python3 "$SCRIPT_DIR/main.py" --tui "$@"
+}
+
 cmd_stop() {
     log_header "STOP TRADING BOT"
     pkill -f "python.*main.py" 2>/dev/null && log_success "Bot stopped" || log_warning "No running bot found"
@@ -331,24 +339,25 @@ show_menu() {
 ${BOLD}CORE ACTIONS${NC}
   1) Start Trading Bot
   2) Stop Trading Bot
-  3) Paper Trading Mode
-  4) Market Scanner
-  5) Run Backtest
-  6) Performance Reports
+  3) Modern TUI Interface
+  4) Paper Trading Mode
+  5) Market Scanner
+  6) Run Backtest
+  7) Performance Reports
 
 ${BOLD}CONFIGURATION${NC}
-  7) Edit Settings
-  8) Edit Environment (.env)
-  9) Dashboard (Coming Soon)
+  8) Edit Settings
+  9) Edit Environment (.env)
+  10) Dashboard (Coming Soon)
 
 ${BOLD}MAINTENANCE${NC}
-  10) Update Platform
-  11) Upgrade Dependencies
-  12) Create Backup
-  13) Restore Backup
+  11) Update Platform
+  12) Upgrade Dependencies
+  13) Create Backup
+  14) Restore Backup
 
 ${BOLD}SYSTEM${NC}
-  14) Uninstall
+  15) Uninstall
   0) Exit
 
 EOF
@@ -362,18 +371,19 @@ cmd_menu() {
         case $choice in
             1) cmd_start ;;
             2) cmd_stop ;;
-            3) cmd_paper_mode ;;
-            4) cmd_scanner ;;
-            5) cmd_backtest ;;
-            6) cmd_reports ;;
-            7) cmd_config ;;
-            8) cmd_env ;;
-            9) cmd_dashboard ;;
-            10) cmd_update ;;
-            11) cmd_upgrade_deps ;;
-            12) cmd_backup ;;
-            13) cmd_restore ;;
-            14) cmd_uninstall ;;
+            3) cmd_tui ;;
+            4) cmd_paper_mode ;;
+            5) cmd_scanner ;;
+            6) cmd_backtest ;;
+            7) cmd_reports ;;
+            8) cmd_config ;;
+            9) cmd_env ;;
+            10) cmd_dashboard ;;
+            11) cmd_update ;;
+            12) cmd_upgrade_deps ;;
+            13) cmd_backup ;;
+            14) cmd_restore ;;
+            15) cmd_uninstall ;;
             0|q|Q)
                 log_info "Goodbye!"
                 exit 0
@@ -382,7 +392,7 @@ cmd_menu() {
         esac
         
         echo ""
-        if [[ "${choice:-}" != "1" ]]; then
+        if [[ "${choice:-}" != "1" && "${choice:-}" != "3" ]]; then
             read -rp "Press Enter to continue..."
         fi
     done
@@ -403,6 +413,7 @@ ${BOLD}COMMANDS:${NC}
     install         Install platform and dependencies
     start           Start the trading bot
     stop            Stop the trading bot
+    tui             Launch modern TUI interface
     update          Update platform from git
     upgrade         Upgrade Python dependencies
     config          View/edit configuration
@@ -420,6 +431,7 @@ ${BOLD}COMMANDS:${NC}
 ${BOLD}EXAMPLES:${NC}
     $0 install      # Full installation
     $0 start        # Launch trading bot
+    $0 tui          # Launch modern TUI interface
     $0 config       # Edit configuration
     $0 menu         # Interactive mode
 
@@ -440,6 +452,7 @@ main() {
         install)     cmd_install "$@" ;;
         start)       cmd_start "$@" ;;
         stop)        cmd_stop ;;
+        tui)         cmd_tui "$@" ;;
         update)      cmd_update ;;
         upgrade)     cmd_upgrade_deps ;;
         config)      cmd_config ;;

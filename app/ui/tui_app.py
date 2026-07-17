@@ -1,82 +1,49 @@
 """
 Modern Terminal User Interface for Bybit Trading System
 A minimalist, keyboard-driven TUI built with Textual
+
+Architecture:
+- Modular component-based design
+- Number-based navigation throughout
+- Consistent y/n confirmations
+- Multi-step wizards for complex workflows
+- Theme support with instant switching
+- Professional error handling
 """
 
 from textual.app import App, ComposeResult
 from textual.screen import Screen
-from textual.widgets import Header, Footer, Static, Button, Label, Input
+from textual.widgets import Header, Footer, Static, Button, Label, Input, Select
 from textual.containers import Container, Vertical, Horizontal, ScrollableContainer
 from textual.binding import Binding
 from textual.message import Message
 from rich.panel import Panel
 from rich.align import Align
+from rich.table import Table as RichTable
 
-
-class Banner(Static):
-    """Reusable banner component"""
-    
-    BANNERS = {
-        "main": """
-██████╗ ██╗   ██╗██████╗ ██╗████████╗
-██╔══██╗╚██╗ ██╔╝██╔══██╗██║╚══██╔══╝
-██████╔╝ ╚████╔╝ ██████╔╝██║   ██║
-██╔══██╗  ╚██╔╝  ██╔══██╗██║   ██║
-██████╔╝   ██║   ██████╔╝██║   ██║
-╚═════╝    ╚═╝   ╚═════╝ ╚═╝   ╚═╝
-        """,
-        "dashboard": "DASHBOARD",
-        "trading": "FUTURES TRADING",
-        "scanner": "MARKET SCANNER",
-        "positions": "OPEN POSITIONS",
-        "orders": "ORDER MANAGER",
-        "ai": "AI ANALYSIS",
-        "backtesting": "BACKTEST ENGINE",
-        "settings": "SETTINGS",
-        "api": "API MANAGEMENT",
-        "logs": "SYSTEM LOGS",
-    }
-    
-    def __init__(self, screen_name: str = "main"):
-        super().__init__()
-        self.screen_name = screen_name
-    
-    def compose(self) -> ComposeResult:
-        banner_text = self.BANNERS.get(self.screen_name, self.screen_name.upper())
-        
-        if self.screen_name == "main":
-            yield Static(f"[cyan]{banner_text}[/cyan]\n\n[cyan bold]AI Trading Platform v2.0[/cyan bold]", id="main-banner")
-        else:
-            yield Static(f"╔══════════════════════════════╗\n      [cyan bold]{banner_text}[/cyan bold]      \n╚══════════════════════════════╝", id="page-banner")
-
-
-class MenuItem(Static):
-    """A single menu item with number navigation"""
-    
-    def __init__(self, number: str, text: str, description: str = ""):
-        super().__init__()
-        self.number = number
-        self.text = text
-        self.description = description
-    
-    def compose(self) -> ComposeResult:
-        if self.description:
-            yield Static(f"[blue][{self.number}][/blue] {self.text}\n    [dim]{self.description}[/dim]")
-        else:
-            yield Static(f"[blue][{self.number}][/blue] {self.text}")
+# Import modular components
+from app.ui.components.widgets import Banner, MenuItem, StatCard, LoadingWidget
+from app.ui.components.dialogs import ConfirmationDialog, InputDialog, MessageDialog, MultiStepWizard
+from app.ui.components.tables import MarketTable, PositionsTable, OrdersTable
+from app.ui.components.forms import TradeForm, APIKeyForm, SettingsForm
+from app.ui.components.notifications import notify_success, notify_error, notify_warning, notify_info
+from app.ui.components.progress import SpinnerWidget, ProgressBar
+from app.ui.components.themes import ThemeManager, get_theme, set_theme, BASE_CSS, THEMES
 
 
 class MainMenuScreen(Screen):
-    """Main menu screen with all primary options"""
+    """Main menu screen with all primary options - number based navigation."""
     
     BINDINGS = [
         Binding("0", "exit_app", "Exit"),
         Binding("q", "quit_app", "Quit"),
         Binding("h", "show_help", "Help"),
-        Binding("d", "go_dashboard", "Dashboard"),
-        Binding("t", "go_trading", "Trading"),
-        Binding("s", "go_settings", "Settings"),
-        Binding("l", "go_logs", "Logs"),
+        Binding("1", "go_dashboard", "Dashboard"),
+        Binding("2", "go_trading", "Trading"),
+        Binding("3", "go_scanner", "Scanner"),
+        Binding("4", "go_portfolio", "Portfolio"),
+        Binding("5", "go_bots", "Bots"),
+        Binding("6", "go_settings", "Settings"),
     ]
     
     def compose(self) -> ComposeResult:
@@ -85,35 +52,78 @@ class MainMenuScreen(Screen):
         with Container(id="main-menu-container"):
             yield Banner("main")
             
-            with Vertical(id="menu-items"):
-                yield MenuItem("1", "Dashboard", "View portfolio and performance")
-                yield MenuItem("2", "Futures Trading", "Manual and automated trading")
-                yield MenuItem("3", "Spot Trading", "Spot market operations")
-                yield MenuItem("4", "AI Market Analysis", "AI-powered insights")
-                yield MenuItem("5", "Market Scanner", "Scan for opportunities")
-                yield MenuItem("6", "Arbitrage Scanner", "Find arbitrage chances")
-                yield MenuItem("7", "Open Positions", "Manage active positions")
-                yield MenuItem("8", "Order Manager", "View and manage orders")
-                yield MenuItem("9", "Risk Management", "Configure risk settings")
-                yield MenuItem("0", "Portfolio", "View complete portfolio")
-                yield MenuItem("a", "Backtesting", "Test strategies historically")
-                yield MenuItem("b", "Reports", "Generate trading reports")
-                yield MenuItem("c", "Strategy Manager", "Manage trading strategies")
-                yield MenuItem("d", "Notifications", "Alert configuration")
-                yield MenuItem("e", "Logs", "System logs viewer")
-                yield MenuItem("f", "Database", "Database tools")
-                yield MenuItem("g", "API Manager", "Configure API keys")
-                yield MenuItem("h", "Updates", "Check for updates")
-                yield MenuItem("i", "Help", "Help and documentation")
-                yield MenuItem("j", "About", "About this application")
-            
-            with Vertical(id="exit-section"):
-                yield MenuItem("0", "Exit", "Close the application")
+            with Vertical(id="menu-sections"):
+                # Account Section
+                yield Static("\n[cyan bold]Account[/cyan bold]", classes="section-title")
+                yield Static("───────────────────────────────────────", classes="section-divider")
+                yield MenuItem("1", "Login", "Connect to Bybit")
+                yield MenuItem("2", "Switch Account", "Change active account")
+                yield MenuItem("3", "Logout", "Disconnect from exchange")
+                
+                # Trading Section
+                yield Static("\n[cyan bold]Trading[/cyan bold]", classes="section-title")
+                yield Static("───────────────────────────────────────", classes="section-divider")
+                yield MenuItem("4", "Manual Trade", "Execute trades manually")
+                yield MenuItem("5", "Auto Trading", "Enable automated trading")
+                yield MenuItem("6", "Paper Trading", "Practice with fake money")
+                yield MenuItem("7", "Arbitrage Scanner", "Find arbitrage opportunities")
+                
+                # Portfolio Section
+                yield Static("\n[cyan bold]Portfolio[/cyan bold]", classes="section-title")
+                yield Static("───────────────────────────────────────", classes="section-divider")
+                yield MenuItem("8", "Positions", "View open positions")
+                yield MenuItem("9", "Orders", "Manage orders")
+                yield MenuItem("0", "Assets", "View balances")
+                yield MenuItem("a", "PnL History", "Trading history")
+                
+                # Tools Section
+                yield Static("\n[cyan bold]Tools[/cyan bold]", classes="section-title")
+                yield Static("───────────────────────────────────────", classes="section-divider")
+                yield MenuItem("b", "Market Scanner", "Scan for opportunities")
+                yield MenuItem("c", "Backtesting", "Test strategies")
+                yield MenuItem("d", "Settings", "Configure system")
+                yield MenuItem("e", "Update System", "Check for updates")
+                
+                # System Section
+                yield Static("\n[cyan bold]System[/cyan bold]", classes="section-title")
+                yield Static("───────────────────────────────────────", classes="section-divider")
+                yield MenuItem("f", "Help", "Documentation")
+                yield MenuItem("g", "About", "About this application")
+                yield MenuItem("0", "Exit", "Close application")
         
         yield Footer()
     
+    def on_key(self, event) -> None:
+        """Handle number key presses for menu navigation."""
+        key = event.key.lower()
+        
+        # Map keys to actions
+        action_map = {
+            "1": self.action_go_login,
+            "2": self.action_go_switch_account,
+            "3": self.action_go_logout,
+            "4": self.action_go_trade,
+            "5": self.action_go_auto_trading,
+            "6": self.action_go_paper_trading,
+            "7": self.action_go_arbitrage,
+            "8": self.action_go_positions,
+            "9": self.action_go_orders,
+            "0": self.action_go_assets,
+            "a": self.action_go_pnl,
+            "b": self.action_go_scanner,
+            "c": self.action_go_backtest,
+            "d": self.action_go_settings,
+            "e": self.action_go_update,
+            "f": self.action_go_help,
+            "g": self.action_go_about,
+        }
+        
+        if key in action_map:
+            action_map[key]()
+            event.prevent_default()
+    
     def action_exit_app(self) -> None:
-        self.app.exit()
+        self.app.push_screen(ExitConfirmationScreen())
     
     def action_quit_app(self) -> None:
         self.app.exit()
@@ -124,14 +134,58 @@ class MainMenuScreen(Screen):
     def action_go_dashboard(self) -> None:
         self.app.push_screen(DashboardScreen())
     
-    def action_go_trading(self) -> None:
-        self.app.push_screen(TradingScreen())
+    def action_go_login(self) -> None:
+        self.app.push_screen(LoginScreen())
+    
+    def action_go_switch_account(self) -> None:
+        self.app.push_screen(SwitchAccountScreen())
+    
+    def action_go_logout(self) -> None:
+        def on_confirm():
+            notify_success(self.app, "Logged out successfully")
+        self.app.push_screen(ConfirmationDialog("Logout from current account?", on_confirm))
+    
+    def action_go_trade(self) -> None:
+        self.app.push_screen(TradeScreen())
+    
+    def action_go_auto_trading(self) -> None:
+        self.app.push_screen(AutoTradingScreen())
+    
+    def action_go_paper_trading(self) -> None:
+        self.app.push_screen(PaperTradingScreen())
+    
+    def action_go_arbitrage(self) -> None:
+        self.app.push_screen(ArbitrageScreen())
+    
+    def action_go_positions(self) -> None:
+        self.app.push_screen(PositionsScreen())
+    
+    def action_go_orders(self) -> None:
+        self.app.push_screen(OrdersScreen())
+    
+    def action_go_assets(self) -> None:
+        self.app.push_screen(AssetsScreen())
+    
+    def action_go_pnl(self) -> None:
+        self.app.push_screen(PnLScreen())
+    
+    def action_go_scanner(self) -> None:
+        self.app.push_screen(ScannerScreen())
+    
+    def action_go_backtest(self) -> None:
+        self.app.push_screen(BacktestScreen())
     
     def action_go_settings(self) -> None:
         self.app.push_screen(SettingsScreen())
     
-    def action_go_logs(self) -> None:
-        self.app.push_screen(LogsScreen())
+    def action_go_update(self) -> None:
+        self.app.push_screen(UpdateScreen())
+    
+    def action_go_help(self) -> None:
+        self.app.push_screen(HelpScreen())
+    
+    def action_go_about(self) -> None:
+        self.app.push_screen(AboutScreen())
 
 
 class DashboardScreen(Screen):
