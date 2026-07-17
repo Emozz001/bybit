@@ -33,8 +33,18 @@ from operator import add
 from itertools import filterfalse
 
 # ================= IMMUTABLE CONFIGURATION =================
-API_KEY = os.getenv("BYBIT_API_KEY", "YOUR_BYBIT_DEMO_API_KEY")
-API_SECRET = os.getenv("BYBIT_API_SECRET", "YOUR_BYBIT_DEMO_API_SECRET")
+API_KEY = os.getenv("BYBIT_API_KEY")
+API_SECRET = os.getenv("BYBIT_API_SECRET")
+
+# Validate API keys on startup
+if not API_KEY or "YOUR_BYBIT" in API_KEY or not API_SECRET or "YOUR_BYBIT" in API_SECRET:
+    raise ValueError(
+        "API keys not configured. Set BYBIT_API_KEY and BYBIT_API_SECRET "
+        "environment variables before running. Example:\n"
+        "  export BYBIT_API_KEY='your_actual_api_key'\n"
+        "  export BYBIT_API_SECRET='your_actual_secret'\n"
+        "\nGet demo keys from: https://testnet.bybit.com/"
+    )
 
 LIVE_MODE = False  # KEEP FALSE FOR INITIAL TESTING
 USE_TESTNET = True
@@ -125,51 +135,7 @@ class TradeStats(NamedTuple):
         if len(new_history) > 100:
             new_history = new_history[-100:]
         return self._replace(trade_history=new_history)
-    symbol_b: str  # e.g., ETH
-    path: str      # e.g., USDT -> BTC -> ETH -> USDT
-    expected_profit_pct: float
-    price_a: float # USDT/BTC (entry)
-    price_b: float # BTC/ETH (mid)
-    price_c: float # ETH/USDT (exit)
-    timestamp: float
-    trade_amount: float = CONFIG.max_trade_amount_usdt
-    
-@dataclass
-class TradeRecord:
-    timestamp: float
-    path: str
-    profit_pct: float
-    profit_usdt: float
-    status: str  # 'success', 'loss', 'error'
-    
-@dataclass
-class TradeStats:
-    total_scans: int = 0
-    opportunities_found: int = 0
-    trades_executed: int = 0
-    successful_trades: int = 0
-    losing_trades: int = 0
-    total_profit_usdt: float = 0.0
-    daily_pnl: float = 0.0
-    daily_trades: int = 0
-    consecutive_errors: int = 0
-    consecutive_losses: int = 0
-    last_error_time: float = 0.0
-    last_trade_time: float = 0.0
-    last_loss_time: float = 0.0
-    trade_history: List[TradeRecord] = field(default_factory=list)
-    start_time: float = field(default_factory=time.time)
-    
-    def win_rate(self) -> float:
-        if self.trades_executed == 0:
-            return 0.0
-        return (self.successful_trades / self.trades_executed) * 100
-    
-    def add_trade(self, record: TradeRecord):
-        self.trade_history.append(record)
-        # Keep only last 100 trades in memory
-        if len(self.trade_history) > 100:
-            self.trade_history = self.trade_history[-100:]
+
 
 # ================= CORE SYSTEM =================
 
