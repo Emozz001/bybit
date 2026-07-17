@@ -1,1 +1,28 @@
-Nothing needs to be added to .gitignore since the changes only include source files (.py, .md) without any build artifacts, dependencies, or temporary files.
+```
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+.coverage
+coverage/
+htmlcov/
+
+# Virtual environments
+venv/
+.venv/
+.env
+.env.local
+.env.
+
+# Testing
+.pytest_cache/
+.mypy_cache/
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+```
