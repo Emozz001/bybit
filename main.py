@@ -22,6 +22,7 @@ from app.core.config import get_config, Config
 from app.core.models import SystemHealth, PerformanceProfile
 from app.api.client import BybitAPIClient
 from app.exchange.websocket import WebSocketManager
+from app.ui.terminal import TradingPlatformApp
 
 
 class TradingPlatform:
@@ -40,15 +41,19 @@ class TradingPlatform:
     - Cached timestamps in trading loop
     - Non-blocking health checks
     - Batched logging
+    
+    UI Integration:
+    - Optional Textual-based terminal UI
+    - Real-time metrics display
     """
 
     __slots__ = (
         'config', '_running', '_start_time', '_api_client', 
         '_ws_manager', 'system_health', '_uptime_cache', '_scan_count',
-        '_last_log_time', '_health_check_interval'
+        '_last_log_time', '_health_check_interval', '_ui_app'
     )
 
-    def __init__(self, config: Config):
+    def __init__(self, config: Config, enable_ui: bool = True):
         self.config = config
         self._running = False
         self._start_time: Optional[datetime] = None
@@ -56,6 +61,7 @@ class TradingPlatform:
         self._scan_count = 0
         self._last_log_time = 0.0
         self._health_check_interval = max(1.0, config.performance.scanner_refresh_ms / 1000 / 10)
+        self._ui_app: Optional[TradingPlatformApp] = None if not enable_ui else None
         
         # Initialize components
         self._api_client: Optional[BybitAPIClient] = None
@@ -287,6 +293,14 @@ class TradingPlatform:
 
 async def main():
     """Main entry point."""
+    import argparse
+    
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(description="Bybit AI Trading Platform")
+    parser.add_argument("--no-ui", action="store_true", help="Disable terminal UI")
+    parser.add_argument("--ui-only", action="store_true", help="Run UI only without trading")
+    args = parser.parse_args()
+    
     try:
         # Load configuration
         config = get_config()
@@ -295,11 +309,30 @@ async def main():
         if config.trading.mode == "live":
             config.validate_for_live_trading()
 
-        # Create and run platform
-        platform = TradingPlatform(config)
+        # Create platform with optional UI
+        enable_ui = not args.no_ui
+        platform = TradingPlatform(config, enable_ui=enable_ui)
 
-        await platform.initialize()
-        await platform.start()
+        if args.ui_only:
+            # Run UI in standalone mode (demo)
+            logger.info("Running UI in standalone demo mode...")
+            from app.ui.terminal import run_ui
+            run_ui(platform=None)
+        else:
+            # Normal operation with optional UI integration
+            await platform.initialize()
+            
+            # Start UI in background thread if enabled
+            if enable_ui:
+                import threading
+                ui_thread = threading.Thread(
+                    target=lambda: run_ui(platform),
+                    daemon=True
+                )
+                ui_thread.start()
+                logger.info("Terminal UI started")
+            
+            await platform.start()
 
     except KeyboardInterrupt:
         logger.info("Interrupted by user")
