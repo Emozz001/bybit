@@ -431,6 +431,10 @@ class ConfirmationDialog(Screen):
 class BybitTUIApp(App):
     """Main TUI Application"""
     
+    def __init__(self, platform=None, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.platform = platform
+    
     CSS = """
     Screen {
         background: $surface;
@@ -516,7 +520,7 @@ class BybitTUIApp(App):
         height: auto;
         border: solid yellow;
         padding: 1 2;
-        margin: 2 auto;
+        margin: 2 0;
     }
     
     #help-banner {
@@ -551,14 +555,35 @@ class BybitTUIApp(App):
         self.exit()
 
 
-def main(platform=None):
+def main():
     """Entry point for the TUI application
     
-    Args:
-        platform: Optional TradingPlatform instance to integrate with
+    This must be called from the main thread, not from within an async context.
+    For integration with TradingPlatform, use run_tui_in_loop() instead.
     """
+    app = BybitTUIApp(platform=None)
+    app.run()
+
+
+def run_tui_sync(platform=None):
+    """Run TUI synchronously - call this from main thread only"""
     app = BybitTUIApp(platform=platform)
     app.run()
+
+
+async def run_tui_async(platform=None):
+    """Run TUI in async context - wraps the sync run in executor"""
+    import concurrent.futures
+    loop = asyncio.get_event_loop()
+    
+    def run_app():
+        app = BybitTUIApp(platform=platform)
+        app.run()
+    
+    # Run in thread pool executor to avoid blocking the event loop
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+        future = loop.run_in_executor(executor, run_app)
+        await future
 
 
 if __name__ == "__main__":

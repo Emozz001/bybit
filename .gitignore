@@ -1,24 +1,3 @@
 ```
-# Python
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-.Python
-env/
 venv/
-.venv/
-.ENV
-.python-version
-
-# Generated coverage testing files
-.coverage
-coverage/
-htmlcov/
-
-# Pytest cache
-.pytest_cache/
-
-# Mypy cache
-.mypy_cache/
 ```

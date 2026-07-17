@@ -8,3 +8,55 @@
 2026-07-17 14:33:57 | INFO     | main:_setup_logging:105 - Performance profile: balanced
 2026-07-17 14:46:55 | INFO     | main:_setup_logging:105 - Logging initialized
 2026-07-17 14:46:55 | INFO     | main:_setup_logging:106 - Performance profile: balanced
+2026-07-17 16:08:49 | INFO     | __main__:_setup_logging:110 - Logging initialized
+2026-07-17 16:08:49 | INFO     | __main__:_setup_logging:111 - Performance profile: balanced
+2026-07-17 16:08:49 | INFO     | __main__:initialize:127 - Initializing platform...
+2026-07-17 16:08:49 | INFO     | __main__:initialize:134 - API client connected
+2026-07-17 16:08:49 | INFO     | __main__:initialize:138 - Loaded 786 symbols
+2026-07-17 16:08:49 | INFO     | __main__:initialize:149 - Initialization complete
+2026-07-17 16:08:49 | ERROR    | __main__:main:355 - Fatal error: App.__init__() got an unexpected keyword argument 'platform'
+2026-07-17 16:09:11 | INFO     | __main__:_setup_logging:110 - Logging initialized
+2026-07-17 16:09:11 | INFO     | __main__:_setup_logging:111 - Performance profile: balanced
+2026-07-17 16:09:11 | INFO     | __main__:initialize:127 - Initializing platform...
+2026-07-17 16:09:11 | INFO     | __main__:initialize:134 - API client connected
+2026-07-17 16:09:11 | INFO     | __main__:initialize:138 - Loaded 786 symbols
+2026-07-17 16:09:11 | INFO     | __main__:initialize:149 - Initialization complete
+2026-07-17 16:09:11 | ERROR    | __main__:main:355 - Fatal error: asyncio.run() cannot be called from a running event loop
+2026-07-17 16:09:33 | INFO     | __main__:_setup_logging:110 - Logging initialized
+2026-07-17 16:09:33 | INFO     | __main__:_setup_logging:111 - Performance profile: balanced
+2026-07-17 16:09:33 | INFO     | __main__:initialize:127 - Initializing platform...
+2026-07-17 16:09:33 | INFO     | __main__:initialize:134 - API client connected
+2026-07-17 16:09:33 | INFO     | __main__:initialize:138 - Loaded 786 symbols
+2026-07-17 16:09:33 | INFO     | __main__:initialize:149 - Initialization complete
+2026-07-17 16:09:33 | INFO     | app.exchange.websocket:disconnect:137 - WebSocket disconnected
+2026-07-17 16:09:33 | ERROR    | __main__:main:361 - Fatal error: asyncio.run() cannot be called from a running event loop
+2026-07-17 16:09:59 | INFO     | __main__:_setup_logging:110 - Logging initialized
+2026-07-17 16:09:59 | INFO     | __main__:_setup_logging:111 - Performance profile: balanced
+2026-07-17 16:09:59 | INFO     | __main__:initialize:127 - Initializing platform...
+2026-07-17 16:09:59 | INFO     | __main__:initialize:134 - API client connected
+2026-07-17 16:09:59 | INFO     | __main__:initialize:138 - Loaded 786 symbols
+2026-07-17 16:09:59 | INFO     | __main__:initialize:149 - Initialization complete
+2026-07-17 16:09:59 | INFO     | app.exchange.websocket:disconnect:137 - WebSocket disconnected
+2026-07-17 16:10:15 | INFO     | __main__:_setup_logging:110 - Logging initialized
+2026-07-17 16:10:15 | INFO     | __main__:_setup_logging:111 - Performance profile: balanced
+2026-07-17 16:10:15 | ERROR    | __main__:main:363 - Fatal error: Cannot run the event loop while another loop is running
+2026-07-17 16:10:48 | INFO     | __main__:_setup_logging:110 - Logging initialized
+2026-07-17 16:10:48 | INFO     | __main__:_setup_logging:111 - Performance profile: balanced
+2026-07-17 16:10:48 | INFO     | __main__:initialize:127 - Initializing platform...
+2026-07-17 16:10:48 | INFO     | __main__:initialize:134 - API client connected
+2026-07-17 16:10:48 | INFO     | __main__:initialize:138 - Loaded 786 symbols
+2026-07-17 16:10:48 | INFO     | __main__:initialize:149 - Initialization complete
+2026-07-17 16:10:48 | INFO     | app.exchange.websocket:disconnect:137 - WebSocket disconnected
+2026-07-17 16:11:01 | INFO     | __main__:_setup_logging:110 - Logging initialized
+2026-07-17 16:11:01 | INFO     | __main__:_setup_logging:111 - Performance profile: balanced
+2026-07-17 16:11:01 | INFO     | __main__:initialize:127 - Initializing platform...
+2026-07-17 16:11:01 | INFO     | __main__:initialize:134 - API client connected
+2026-07-17 16:11:01 | INFO     | __main__:initialize:138 - Loaded 786 symbols
+2026-07-17 16:11:01 | INFO     | __main__:initialize:149 - Initialization complete
+2026-07-17 16:11:01 | INFO     | app.exchange.websocket:disconnect:137 - WebSocket disconnected
+2026-07-17 16:16:35 | INFO     | __main__:_setup_logging:110 - Logging initialized
+2026-07-17 16:16:35 | INFO     | __main__:_setup_logging:111 - Performance profile: balanced
+2026-07-17 16:23:46 | INFO     | main:_setup_logging:110 - Logging initialized
+2026-07-17 16:23:46 | INFO     | main:_setup_logging:111 - Performance profile: balanced
+2026-07-17 16:25:29 | INFO     | __main__:_setup_logging:110 - Logging initialized
+2026-07-17 16:25:29 | INFO     | __main__:_setup_logging:111 - Performance profile: balanced
