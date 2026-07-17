@@ -9,20 +9,22 @@ Performance optimizations:
 - Efficient resource monitoring
 """
 
+import argparse
 import asyncio
-import signal
 import sys
+import threading
+import time
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, List
+from typing import Optional
 
 from loguru import logger
 
-from app.core.config import get_config, Config
-from app.core.models import SystemHealth, PerformanceProfile
+from app.core.config import Config, get_config
+from app.core.models import SystemHealth
 from app.api.client import BybitAPIClient
 from app.exchange.websocket import WebSocketManager
-from app.ui.terminal import TradingPlatformApp
+from app.ui.terminal import TradingPlatformApp, run_ui
 
 
 class TradingPlatform:
@@ -50,7 +52,7 @@ class TradingPlatform:
     __slots__ = (
         'config', '_running', '_start_time', '_api_client', 
         '_ws_manager', 'system_health', '_uptime_cache', '_scan_count',
-        '_last_log_time', '_health_check_interval', '_ui_app'
+        '_health_check_interval', '_enable_ui'
     )
 
     def __init__(self, config: Config, enable_ui: bool = True):
@@ -59,9 +61,8 @@ class TradingPlatform:
         self._start_time: Optional[datetime] = None
         self._uptime_cache = "0s"
         self._scan_count = 0
-        self._last_log_time = 0.0
         self._health_check_interval = max(1.0, config.performance.scanner_refresh_ms / 1000 / 10)
-        self._ui_app: Optional[TradingPlatformApp] = None if not enable_ui else None
+        self._enable_ui = enable_ui
         
         # Initialize components
         self._api_client: Optional[BybitAPIClient] = None
@@ -151,7 +152,6 @@ class TradingPlatform:
         logger.info("Starting platform...")
         self._running = True
         self._start_time = datetime.utcnow()
-        loop_start_time = time.monotonic()
 
         try:
             # Connect WebSocket if we have symbols to subscribe to
@@ -177,8 +177,6 @@ class TradingPlatform:
 
     async def _trading_loop(self):
         """Main trading loop with optimized timing and health checks."""
-        import time
-        
         logger.info("Starting trading loop...")
         
         scanner_interval = self.config.performance.scanner_refresh_ms / 1000.0
@@ -252,8 +250,6 @@ class TradingPlatform:
         if not self._start_time:
             return "0s"
         
-        # Use cached value if recently computed (within 1 second)
-        # This avoids repeated datetime calculations in tight loops
         delta = datetime.utcnow() - self._start_time
         total_seconds = int(delta.total_seconds())
         
@@ -293,8 +289,6 @@ class TradingPlatform:
 
 async def main():
     """Main entry point."""
-    import argparse
-    
     # Parse command line arguments
     parser = argparse.ArgumentParser(description="Bybit AI Trading Platform")
     parser.add_argument("--no-ui", action="store_true", help="Disable terminal UI")
@@ -316,7 +310,6 @@ async def main():
         if args.ui_only:
             # Run UI in standalone mode (demo)
             logger.info("Running UI in standalone demo mode...")
-            from app.ui.terminal import run_ui
             run_ui(platform=None)
         else:
             # Normal operation with optional UI integration
@@ -324,7 +317,6 @@ async def main():
             
             # Start UI in background thread if enabled
             if enable_ui:
-                import threading
                 ui_thread = threading.Thread(
                     target=lambda: run_ui(platform),
                     daemon=True
