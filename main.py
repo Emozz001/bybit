@@ -305,34 +305,34 @@ async def main():
         if config.trading.mode == "live":
             config.validate_for_live_trading()
 
-        # Run modern TUI if requested
-        if args.tui or args.ui_only:
+        # Run modern TUI if requested (must be done outside asyncio)
+        if args.tui:
             logger.info("Starting modern Terminal User Interface...")
             run_tui()
+            return
+        
+        if args.ui_only:
+            logger.info("Running UI in standalone demo mode...")
+            run_ui(platform=None)
             return
 
         # Create platform with optional UI
         enable_ui = not args.no_ui
         platform = TradingPlatform(config, enable_ui=enable_ui)
 
-        if args.ui_only:
-            # Run UI in standalone mode (demo)
-            logger.info("Running UI in standalone demo mode...")
-            run_ui(platform=None)
-        else:
-            # Normal operation with optional UI integration
-            await platform.initialize()
-            
-            # Start UI in background thread if enabled
-            if enable_ui:
-                ui_thread = threading.Thread(
-                    target=lambda: run_ui(platform),
-                    daemon=True
-                )
-                ui_thread.start()
-                logger.info("Terminal UI started")
-            
-            await platform.start()
+        # Normal operation with optional UI integration
+        await platform.initialize()
+        
+        # Start UI in background thread if enabled
+        if enable_ui:
+            ui_thread = threading.Thread(
+                target=lambda: run_ui(platform),
+                daemon=True
+            )
+            ui_thread.start()
+            logger.info("Terminal UI started")
+        
+        await platform.start()
 
     except KeyboardInterrupt:
         logger.info("Interrupted by user")
