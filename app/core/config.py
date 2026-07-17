@@ -1,6 +1,6 @@
 """
 Configuration management for Bybit AI Trading Platform.
-Uses YAML configuration with environment variable overrides.
+Uses YAML configuration with environment variable overrides and .env file support.
 """
 
 import os
@@ -9,6 +9,25 @@ from pathlib import Path
 from typing import Optional, Dict, Any, List
 from dataclasses import dataclass, field
 from datetime import datetime
+try:
+    from dotenv import load_dotenv
+    DOTENV_AVAILABLE = True
+except ImportError:
+    DOTENV_AVAILABLE = False
+
+
+def load_environment():
+    """Load environment variables from .env file if available."""
+    if DOTENV_AVAILABLE:
+        env_path = Path(".env")
+        if env_path.exists():
+            load_dotenv(env_path)
+            return True
+    return False
+
+
+# Load .env file at module import
+load_environment()
 
 
 @dataclass
@@ -269,7 +288,8 @@ class Config:
         """Apply environment variable overrides to configuration."""
         env_mapping = {
             "BYBIT_API_KEY": ("exchange", "api_key"),
-            "BYBIT_SECRET_KEY": ("exchange", "secret_key"),
+            "BYBIT_API_SECRET": ("exchange", "secret_key"),
+            "BYBIT_SECRET_KEY": ("exchange", "secret_key"),  # Legacy support
             "BYBIT_TESTNET": ("exchange", "testnet"),
             "TRADING_MODE": ("trading", "mode"),
             "MIN_NET_PROFIT_PCT": ("trading", "min_net_profit_pct"),
@@ -277,6 +297,9 @@ class Config:
             "DAILY_LOSS_LIMIT_USDT": ("risk", "max_daily_loss_usdt"),
             "MAX_LEVERAGE": ("risk", "max_leverage"),
             "LOG_LEVEL": ("logging", "level"),
+            "UI_ENABLED": ("performance", "analytics_enabled"),  # Map UI to analytics
+            "HEALTH_CHECK_INTERVAL": ("performance", "cache_ttl_seconds"),  # Approximate mapping
+            "DB_PATH": ("database", "path"),
             "PERFORMANCE_PROFILE": ("performance", "profile"),
         }
         
@@ -292,10 +315,41 @@ class Config:
                         value = True
                     elif value.lower() == "false":
                         value = False
-                    elif value.replace(".", "").isdigit():
+                    elif value.replace(".", "").replace("-", "").isdigit():
                         value = float(value) if "." in value else int(value)
                 
                 data[section][key] = value
+        
+        # Handle special cases that need custom logic
+        # TRADING_SYMBOL: single symbol or comma-separated list
+        trading_symbol = os.getenv("TRADING_SYMBOL")
+        if trading_symbol:
+            if "scanner" not in data:
+                data["scanner"] = {}
+            if "," in trading_symbol:
+                data["scanner"]["symbols"] = [s.strip() for s in trading_symbol.split(",")]
+            else:
+                data["scanner"]["symbols"] = [trading_symbol.strip()]
+        
+        # TRADING_AMOUNT: maps to max_trade_size_usdt
+        trading_amount = os.getenv("TRADING_AMOUNT")
+        if trading_amount:
+            if "trading" not in data:
+                data["trading"] = {}
+            try:
+                data["trading"]["max_trade_size_usdt"] = float(trading_amount)
+            except ValueError:
+                pass
+        
+        # MAX_POSITION_SIZE: maps to max_position_size_usdt
+        max_position = os.getenv("MAX_POSITION_SIZE")
+        if max_position:
+            if "risk" not in data:
+                data["risk"] = {}
+            try:
+                data["risk"]["max_position_size_usdt"] = float(max_position)
+            except ValueError:
+                pass
         
         return data
     
