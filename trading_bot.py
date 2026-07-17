@@ -1,8 +1,14 @@
+"""
+Functional Trading Bot - Refactored for immutability and performance
+=====================================================================
+This module implements a trend-following trading bot using functional programming principles.
+"""
+
 import ccxt
 import time
 import os
-from datetime import datetime, timedelta
-from typing import Optional, Dict, List, Tuple, Any
+from datetime import datetime
+from typing import Optional, Dict, List, Tuple, NamedTuple
 from collections import deque
 from dataclasses import dataclass, field
 from rich.console import Console
@@ -11,68 +17,68 @@ from rich.table import Table
 from rich.panel import Panel
 from rich.layout import Layout
 from rich.text import Text
-import threading
-from concurrent.futures import ThreadPoolExecutor
 import logging
+from functools import lru_cache, reduce
+from itertools import islice
+from operator import add
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# Initialize console
 console = Console()
 
 # =============================================================================
-# CONFIGURATION - EDIT THESE VALUES
+# IMMUTABLE CONFIGURATION
 # =============================================================================
-# Get your API keys from https://testnet.bybit.com/ (for testing) 
-# or https://www.bybit.com/ (for live trading)
-# NEVER share your keys. Set them as environment variables for security:
-# export BYBIT_API_KEY="your_key"
-# export BYBIT_SECRET="your_secret"
 
 BYBIT_API_KEY = os.getenv("BYBIT_API_KEY", "")
 BYBIT_SECRET = os.getenv("BYBIT_SECRET", "")
 
-# Trading Parameters
-SYMBOL = "BTC/USDT"      # Trading pair
-TIMEFRAME = "5m"         # Candlestick timeframe
-LEVERAGE = 3             # Low leverage for risk management (1-10 recommended)
-RISK_PER_TRADE = 0.01    # Risk 1% of account per trade
-STOP_LOSS_PCT = 0.02     # 2% Stop Loss
-TAKE_PROFIT_PCT = 0.04   # 4% Take Profit (1:2 Risk/Reward ratio)
+@dataclass(frozen=True)
+class Config:
+    """Immutable configuration using frozen dataclass"""
+    symbol: str = "BTC/USDT"
+    timeframe: str = "5m"
+    leverage: int = 3
+    risk_per_trade: float = 0.01
+    stop_loss_pct: float = 0.02
+    take_profit_pct: float = 0.04
+    cache_max_size: int = 100
+    update_interval: int = 2
+    max_concurrent_requests: int = 3
+    max_daily_trades: int = 10
+    max_daily_loss_pct: float = 0.05
+    cooldown_period: float = 300.0
+    emergency_stop_enabled: bool = True
+    max_slippage_pct: float = 0.005
+    test_mode: bool = True
 
-# Performance Optimization Settings
-CACHE_MAX_SIZE = 100     # Maximum cached OHLCV candles
-UPDATE_INTERVAL = 2      # Seconds between UI updates
-DATA_PREFETCH = True     # Enable data prefetching
-MAX_CONCURRENT_REQUESTS = 3  # Limit concurrent API requests
-
-# Safety Settings
-MAX_DAILY_TRADES = 10    # Maximum trades per day to prevent overtrading
-MAX_DAILY_LOSS_PCT = 0.05  # Stop trading after 5% daily loss
-COOLDOWN_PERIOD = 300    # Seconds to wait after a loss before next trade
-EMERGENCY_STOP_ENABLED = True  # Enable emergency stop on large losses
-MAX_SLIPPAGE_PCT = 0.005  # Maximum allowed slippage (0.5%)
-
-# Test Mode: Set to True to run without executing real trades
-TEST_MODE = True         
+CONFIG = Config()
 
 # =============================================================================
+# IMMUTABLE DATA STRUCTURES
+# =============================================================================
 
-@dataclass
-class Position:
-    """Represents a trading position"""
+class Position(NamedTuple):
+    """Immutable trading position using NamedTuple"""
     side: str
     entry_price: float
     size: float
-    timestamp: float = field(default_factory=time.time)
+    timestamp: float
     stop_loss: Optional[float] = None
     take_profit: Optional[float] = None
+    
+    @classmethod
+    def create(cls, side: str, entry_price: float, size: float, 
+               stop_loss: Optional[float] = None, take_profit: Optional[float] = None) -> 'Position':
+        """Factory method for creating positions"""
+        return cls(side=side, entry_price=entry_price, size=size, 
+                   timestamp=time.time(), stop_loss=stop_loss, take_profit=take_profit)
 
-@dataclass
-class TradeStats:
-    """Tracks trading performance statistics"""
+
+class TradeStats(NamedTuple):
+    """Immutable trading statistics using NamedTuple"""
     total_trades: int = 0
     winning_trades: int = 0
     losing_trades: int = 0
@@ -83,59 +89,83 @@ class TradeStats:
     consecutive_losses: int = 0
     max_drawdown: float = 0.0
     peak_balance: float = 0.0
+    account_balance: float = 0.0
     
     @property
     def win_rate(self) -> float:
         return (self.winning_trades / self.total_trades * 100) if self.total_trades > 0 else 0.0
     
-    def reset_daily(self):
-        """Reset daily counters"""
-        self.daily_trades = 0
-        self.daily_pnl = 0.0
+    def reset_daily(self) -> 'TradeStats':
+        """Return new instance with daily counters reset"""
+        return self._replace(daily_trades=0, daily_pnl=0.0)
+    
+    def add_trade(self, pnl_usd: float, is_win: bool) -> 'TradeStats':
+        """Return new instance with updated trade statistics"""
+        return self._replace(
+            total_trades=self.total_trades + 1,
+            winning_trades=self.winning_trades + (1 if is_win else 0),
+            losing_trades=self.losing_trades + (0 if is_win else 1),
+            total_pnl=self.total_pnl + pnl_usd,
+            daily_pnl=self.daily_pnl + pnl_usd,
+            consecutive_losses=0 if is_win else self.consecutive_losses + 1
+        )
+    
+    def update_balance(self, balance: float) -> 'TradeStats':
+        """Return new instance with updated balance tracking"""
+        new_peak = max(self.peak_balance, balance)
+        drawdown = (new_peak - balance) / new_peak if new_peak > 0 else 0
+        return self._replace(
+            account_balance=balance,
+            peak_balance=new_peak,
+            max_drawdown=max(self.max_drawdown, drawdown)
+        )
     
     def is_trading_allowed(self) -> Tuple[bool, str]:
         """Check if trading is allowed based on safety rules"""
-        if self.daily_trades >= MAX_DAILY_TRADES:
-            return False, f"Daily trade limit reached ({MAX_DAILY_TRADES})"
+        if self.daily_trades >= CONFIG.max_daily_trades:
+            return False, f"Daily trade limit reached ({CONFIG.max_daily_trades})"
         
-        if self.daily_pnl <= -self.account_balance * MAX_DAILY_LOSS_PCT:
-            return False, f"Daily loss limit reached ({MAX_DAILY_LOSS_PCT*100}%)"
+        if self.daily_pnl <= -self.account_balance * CONFIG.max_daily_loss_pct:
+            return False, f"Daily loss limit reached ({CONFIG.max_daily_loss_pct*100}%)"
         
-        if time.time() - self.last_trade_time < COOLDOWN_PERIOD and self.consecutive_losses > 0:
-            remaining = COOLDOWN_PERIOD - (time.time() - self.last_trade_time)
+        if time.time() - self.last_trade_time < CONFIG.cooldown_period and self.consecutive_losses > 0:
+            remaining = CONFIG.cooldown_period - (time.time() - self.last_trade_time)
             return False, f"Cooldown period active ({remaining:.0f}s remaining)"
         
         return True, "OK"
 
+
+# =============================================================================
+# FUNCTIONAL DATA CACHING
+# =============================================================================
+
 class CachedData:
-    """Efficient data caching for market data"""
-    def __init__(self, max_size: int = CACHE_MAX_SIZE):
+    """Efficient data caching for market data using deque for O(1) operations"""
+    __slots__ = ['closes', 'timestamps', 'last_update']
+    
+    def __init__(self, max_size: int = CONFIG.cache_max_size):
         self.closes: deque = deque(maxlen=max_size)
         self.timestamps: deque = deque(maxlen=max_size)
         self.last_update: float = 0.0
         
     def update(self, ohlcv: List[List]) -> bool:
-        """Update cache only if new data available"""
+        """Update cache only if new data available - O(n) optimized"""
         if not ohlcv:
             return False
             
         latest_timestamp = ohlcv[-1][0]
         if latest_timestamp <= self.last_update:
             return False
-            
-        self.closes.clear()
-        self.timestamps.clear()
-        for candle in ohlcv:
-            self.closes.append(candle[4])
-            self.timestamps.append(candle[0])
+        
+        # Use extend for bulk update - more efficient than individual appends
+        self.closes.extend(candle[4] for candle in ohlcv)
+        self.timestamps.extend(candle[0] for candle in ohlcv)
         self.last_update = latest_timestamp
         return True
     
     def get_closes(self, count: int) -> List[float]:
-        """Get last N closing prices efficiently"""
-        if count > len(self.closes):
-            count = len(self.closes)
-        return list(self.closes)[-count:]
+        """Get last N closing prices efficiently - O(k) where k <= count"""
+        return list(islice(self.closes, max(0, len(self.closes) - count), len(self.closes)))
 
 class TradingBot:
     def __init__(self):
@@ -157,8 +187,6 @@ class TradingBot:
         self.last_error_time = 0.0
         self.consecutive_errors = 0
 
-        # Thread pool for async operations
-        self.executor = ThreadPoolExecutor(max_workers=MAX_CONCURRENT_REQUESTS)
         self.running = True
         
         # Performance optimization: cache market data
@@ -167,12 +195,12 @@ class TradingBot:
         self.ticker_cache_ttl = 1.0  # Cache ticker for 1 second
         
         # Pre-calculate constants to avoid repeated computation
-        self._stop_loss_multiplier_buy = 1 - STOP_LOSS_PCT
-        self._take_profit_multiplier_buy = 1 + TAKE_PROFIT_PCT
-        self._stop_loss_multiplier_sell = 1 + STOP_LOSS_PCT
-        self._take_profit_multiplier_sell = 1 - TAKE_PROFIT_PCT
+        self._stop_loss_multiplier_buy = 1 - CONFIG.stop_loss_pct
+        self._take_profit_multiplier_buy = 1 + CONFIG.take_profit_pct
+        self._stop_loss_multiplier_sell = 1 + CONFIG.stop_loss_pct
+        self._take_profit_multiplier_sell = 1 - CONFIG.take_profit_pct
         
-        if TEST_MODE:
+        if CONFIG.test_mode:
             console.print("[bold yellow]WARNING: RUNNING IN TEST MODE - No real trades will be executed[/bold yellow]")
 
     def check_connection(self) -> bool:
@@ -195,11 +223,11 @@ class TradingBot:
         try:
             # Fetch ticker with simple time-based caching
             if current_time - self.last_ticker_fetch > self.ticker_cache_ttl:
-                ticker = self.exchange.fetch_ticker(SYMBOL)
+                ticker = self.exchange.fetch_ticker(CONFIG.symbol)
                 self.last_ticker_fetch = current_time
             
             # Always fetch fresh OHLCV for accurate analysis
-            ohlcv = self.exchange.fetch_ohlcv(SYMBOL, TIMEFRAME, limit=100)
+            ohlcv = self.exchange.fetch_ohlcv(CONFIG.symbol, CONFIG.timeframe, limit=100)
             
             # Update cache if new data available
             if ohlcv:
@@ -213,40 +241,34 @@ class TradingBot:
     def calculate_indicators(self, ohlcv: Optional[List] = None) -> Optional[Dict[str, float]]:
         """Calculate technical indicators using cached data for efficiency"""
         # Use cached data if available and OHLCV not provided
-        if ohlcv is None:
-            closes = self.data_cache.get_closes(50)
-        else:
-            if len(ohlcv) < 50:
-                return None
-            closes = [candle[4] for candle in ohlcv]
+        closes = self.data_cache.get_closes(50) if ohlcv is None else (
+            [candle[4] for candle in ohlcv] if len(ohlcv) >= 50 else None
+        )
         
-        if len(closes) < 50:
+        if not closes or len(closes) < 50:
             return None
         
-        # Optimized SMA calculation using sum of slices
-        sma_20 = sum(closes[-20:]) / 20
-        sma_50 = sum(closes[-50:]) / 50
+        # Optimized SMA calculation using reduce for functional approach
+        sma_20 = reduce(add, closes[-20:]) / 20
+        sma_50 = reduce(add, closes[-50:]) / 50
         
-        # Optimized RSI Calculation (14 period) - vectorized approach
+        # Optimized RSI Calculation (14 period) - functional vectorized approach
         rsi_period = 14
         if len(closes) < rsi_period + 1:
             rsi = 50.0  # Default neutral RSI
         else:
-            # Calculate price changes
-            changes = [closes[-i] - closes[-i-1] for i in range(1, rsi_period + 1)]
+            # Calculate price changes using map
+            indices = range(1, rsi_period + 1)
+            changes = list(map(lambda i: closes[-i] - closes[-i-1], indices))
             
-            # Separate gains and losses
-            gains = [max(0, change) for change in changes]
-            losses = [max(0, -change) for change in changes]
+            # Separate gains and losses using filter and map
+            gains = list(map(lambda x: max(0, x), changes))
+            losses = list(map(lambda x: max(0, -x), changes))
             
-            avg_gain = sum(gains) / rsi_period
-            avg_loss = sum(losses) / rsi_period
+            avg_gain = reduce(add, gains) / rsi_period
+            avg_loss = reduce(add, losses) / rsi_period
             
-            if avg_loss == 0:
-                rsi = 100.0
-            else:
-                rs = avg_gain / avg_loss
-                rsi = 100 - (100 / (1 + rs))
+            rsi = 100.0 if avg_loss == 0 else 100 - (100 / (1 + avg_gain / avg_loss))
         
         return {
             'sma_20': sma_20,
@@ -257,7 +279,7 @@ class TradingBot:
 
     def analyze_market(self, indicators: Optional[Dict[str, float]]) -> str:
         """
-        TRADING STRATEGY LOGIC
+        TRADING STRATEGY LOGIC - Functional approach with pattern matching
         
         This implements a conservative trend-following strategy:
         - BUY when price > SMA_20 > SMA_50 and RSI < 70 (not overbought)
@@ -269,93 +291,89 @@ class TradingBot:
         if not indicators:
             return 'HOLD'
         
+        # Extract values for pattern matching
         price = indicators['current_price']
         sma_20 = indicators['sma_20']
         sma_50 = indicators['sma_50']
         rsi = indicators['rsi']
         
-        # Bullish conditions
-        if price > sma_20 > sma_50 and rsi < 70 and rsi > 50:
-            return 'BUY'
+        # Define signal conditions as pure functions
+        is_bullish_trend = lambda: price > sma_20 > sma_50
+        is_bearish_trend = lambda: price < sma_20 < sma_50
+        is_rsi_neutral = lambda: 30 < rsi < 70
+        is_rsi_bullish = lambda: 50 < rsi < 70
+        is_rsi_bearish = lambda: 30 < rsi < 50
         
-        # Bearish conditions  
-        if price < sma_20 < sma_50 and rsi > 30 and rsi < 50:
-            return 'SELL'
+        # Signal determination using functional composition
+        buy_signal = is_bullish_trend() and is_rsi_bullish()
+        sell_signal = is_bearish_trend() and is_rsi_bearish()
         
-        return 'HOLD'
+        return 'BUY' if buy_signal else ('SELL' if sell_signal else 'HOLD')
 
     def execute_trade(self, side: str, price: float) -> bool:
-        """Execute a market order with position sizing and safety checks"""
+        """Execute a market order with position sizing and safety checks - Functional approach"""
         try:
-            # Safety Check 1: Emergency stop
-            if self.emergency_stop:
-                console.print("[red]Trading blocked - Emergency stop active[/red]")
-                return False
+            # Safety checks as pure predicates
+            checks = [
+                (not self.emergency_stop, "Emergency stop active"),
+                (*self.stats.is_trading_allowed(),),
+                (self.consecutive_errors < 3, "Too many consecutive errors")
+            ]
             
-            # Safety Check 2: Daily limits
-            allowed, reason = self.stats.is_trading_allowed()
+            for condition, message in checks[:1]:
+                if not condition:
+                    console.print(f"[red]Trading blocked - {message}[/red]")
+                    return False
+            
+            allowed, reason = checks[1][0], checks[1][1] if len(checks[1]) > 1 else "OK"
             if not allowed:
                 console.print(f"[yellow]Trading blocked - {reason}[/yellow]")
                 return False
             
-            # Safety Check 3: Consecutive errors
-            if self.consecutive_errors >= 3:
-                console.print("[red]Trading blocked - Too many consecutive errors[/red]")
+            if checks[2][0] is False:
+                console.print(f"[red]Trading blocked - {checks[2][1]}[/red]")
                 return False
             
-            # Calculate position size based on risk
-            risk_amount = self.account_balance * RISK_PER_TRADE
-            stop_distance = price * STOP_LOSS_PCT
-            position_size = risk_amount / stop_distance
+            # Calculate position size based on risk (pure calculation)
+            risk_amount = self.account_balance * CONFIG.risk_per_trade
+            stop_distance = price * CONFIG.stop_loss_pct
+            contract_size = (risk_amount / stop_distance) / price
             
-            # Convert to contract size (simplified)
-            contract_size = position_size / price
+            # Calculate SL/TP levels using pre-computed multipliers
+            stop_loss, take_profit = (
+                (price * self._stop_loss_multiplier_buy, price * self._take_profit_multiplier_buy)
+                if side == 'buy' else
+                (price * self._stop_loss_multiplier_sell, price * self._take_profit_multiplier_sell)
+            )
             
-            # Calculate SL/TP levels
-            if side == 'buy':
-                stop_loss = price * self._stop_loss_multiplier_buy
-                take_profit = price * self._take_profit_multiplier_buy
-            else:
-                stop_loss = price * self._stop_loss_multiplier_sell
-                take_profit = price * self._take_profit_multiplier_sell
-            
-            if TEST_MODE:
+            if CONFIG.test_mode:
                 console.print(f"[cyan][TEST] Would execute {side.upper()} order for {contract_size:.6f} BTC[/cyan]")
                 console.print(f"[cyan][TEST] SL: ${stop_loss:.2f} | TP: ${take_profit:.2f}[/cyan]")
-                self.position = Position(
-                    side=side, 
-                    entry_price=price, 
-                    size=contract_size,
-                    stop_loss=stop_loss,
-                    take_profit=take_profit
+                self.position = Position.create(side, price, contract_size, stop_loss, take_profit)
+                # Update stats immutably
+                self.stats = self.stats._replace(
+                    daily_trades=self.stats.daily_trades + 1,
+                    last_trade_time=time.time()
                 )
-                self.stats.daily_trades += 1
-                self.stats.last_trade_time = time.time()
                 return True
             
             # Live trading execution with slippage check
-            order = self.exchange.create_order(SYMBOL, 'market', side, contract_size)
+            order = self.exchange.create_order(CONFIG.symbol, 'market', side, contract_size)
             entry_price = order.get('average', price)
             
             # Check slippage
             slippage = abs(entry_price - price) / price
-            if slippage > MAX_SLIPPAGE_PCT:
+            if slippage > CONFIG.max_slippage_pct:
                 console.print(f"[red]High slippage detected: {slippage*100:.3f}% - Closing immediately[/red]")
-                # Close position immediately if slippage too high
                 close_side = 'sell' if side == 'buy' else 'buy'
-                self.exchange.create_order(SYMBOL, 'market', close_side, contract_size)
+                self.exchange.create_order(CONFIG.symbol, 'market', close_side, contract_size)
                 return False
             
-            self.position = Position(
-                side=side, 
-                entry_price=entry_price, 
-                size=contract_size,
-                stop_loss=stop_loss,
-                take_profit=take_profit
+            self.position = Position.create(side, entry_price, contract_size, stop_loss, take_profit)
+            self.stats = self.stats._replace(
+                daily_trades=self.stats.daily_trades + 1,
+                last_trade_time=time.time()
             )
-            
-            self.stats.daily_trades += 1
-            self.stats.last_trade_time = time.time()
             
             console.print(f"[green]Executed {side.upper()} at {entry_price}[/green]")
             console.print(f"[green]SL: ${stop_loss:.2f} | TP: ${take_profit:.2f}[/green]")
@@ -412,10 +430,10 @@ class TradingBot:
 
             pnl_usd = self.position.size * current_price * pnl_pct
 
-            if TEST_MODE:
+            if CONFIG.test_mode:
                 console.print(f"[cyan][TEST] Closing position - {reason} - PnL: ${pnl_usd:.2f} ({pnl_pct*100:.2f}%)[/cyan]")
             else:
-                self.exchange.create_order(SYMBOL, 'market', side, self.position.size)
+                self.exchange.create_order(CONFIG.symbol, 'market', side, self.position.size)
                 console.print(f"[green]Closed position - {reason} - PnL: ${pnl_usd:.2f}[/green]")
 
             # Update statistics
@@ -427,7 +445,7 @@ class TradingBot:
                 self.stats.consecutive_losses += 1
                 
                 # Check for emergency stop conditions
-                if EMERGENCY_STOP_ENABLED and self.stats.consecutive_losses >= 5:
+                if CONFIG.emergency_stop_enabled and self.stats.consecutive_losses >= 5:
                     self.emergency_stop = True
                     console.print("[bold red]EMERGENCY STOP ACTIVATED - 5 consecutive losses[/bold red]")
             
@@ -436,7 +454,7 @@ class TradingBot:
             self.stats.daily_pnl += pnl_usd
             
             # Update drawdown tracking
-            if TEST_MODE:
+            if CONFIG.test_mode:
                 current_balance = 10000.0 + self.stats.total_pnl
             else:
                 current_balance = self.account_balance
@@ -449,7 +467,7 @@ class TradingBot:
                 self.stats.max_drawdown = drawdown
             
             # Check daily loss limit
-            if self.stats.daily_pnl <= -self.account_balance * MAX_DAILY_LOSS_PCT:
+            if self.stats.daily_pnl <= -self.account_balance * CONFIG.max_daily_loss_pct:
                 console.print("[bold red]Daily loss limit reached - Trading halted for today[/bold red]")
             
             # Reset error counter on successful trade close
@@ -474,8 +492,8 @@ class TradingBot:
         # Header
         header_text = Text()
         header_text.append("Bybit Trading Bot\n", style="bold blue")
-        header_text.append(f"Symbol: {SYMBOL} | Timeframe: {TIMEFRAME} | Leverage: {LEVERAGE}x", style="dim")
-        if TEST_MODE:
+        header_text.append(f"Symbol: {CONFIG.symbol} | Timeframe: {CONFIG.timeframe} | Leverage: {CONFIG.leverage}x", style="dim")
+        if CONFIG.test_mode:
             header_text.append(" | WARNING: TEST MODE", style="bold yellow")
         
         header = Panel(header_text, border_style="blue")
@@ -595,24 +613,24 @@ class TradingBot:
         console.print("[bold green]Starting Trading Bot...[/bold green]\n")
         
         # Initialize balance tracking
-        self.starting_balance = self.account_balance if not TEST_MODE else 10000.0
+        self.starting_balance = self.account_balance if not CONFIG.test_mode else 10000.0
         self.stats.peak_balance = self.starting_balance
         self.stats.account_balance = self.starting_balance
 
         # Pre-fetch initial data
         ticker, ohlcv = self.get_market_data()
         if ticker:
-            console.print(f"[green]✓ Connected to exchange - {SYMBOL} @ ${ticker['last']:,.2f}[/green]")
+            console.print(f"[green]✓ Connected to exchange - {CONFIG.symbol} @ ${ticker['last']:,.2f}[/green]")
         else:
             console.print("[yellow]⚠ Unable to fetch market data - running in simulation mode[/yellow]")
         
         # Display safety settings
         console.print(f"\n[bold cyan]Safety Settings:[/bold cyan]")
-        console.print(f"  • Max Daily Trades: {MAX_DAILY_TRADES}")
-        console.print(f"  • Max Daily Loss: {MAX_DAILY_LOSS_PCT*100}%")
-        console.print(f"  • Cooldown Period: {COOLDOWN_PERIOD}s")
-        console.print(f"  • Emergency Stop: {'Enabled' if EMERGENCY_STOP_ENABLED else 'Disabled'}")
-        console.print(f"  • Max Slippage: {MAX_SLIPPAGE_PCT*100}%\n")
+        console.print(f"  • Max Daily Trades: {CONFIG.max_daily_trades}")
+        console.print(f"  • Max Daily Loss: {CONFIG.max_daily_loss_pct*100}%")
+        console.print(f"  • Cooldown Period: {CONFIG.cooldown_period}s")
+        console.print(f"  • Emergency Stop: {'Enabled' if CONFIG.emergency_stop_enabled else 'Disabled'}")
+        console.print(f"  • Max Slippage: {CONFIG.max_slippage_pct*100}%\n")
         
         with Live(console=console, refresh_per_second=1, screen=True) as live:
             while self.running:
@@ -620,7 +638,7 @@ class TradingBot:
                     # Check emergency stop
                     if self.emergency_stop:
                         console.print("[bold red]EMERGENCY STOP ACTIVE - Bot halted[/bold red]")
-                        time.sleep(UPDATE_INTERVAL * 5)
+                        time.sleep(CONFIG.update_interval * 5)
                         continue
                     
                     # Fetch market data with caching
@@ -641,7 +659,7 @@ class TradingBot:
                         self.check_exit_conditions(ticker['last'])
 
                     # Update balance (simulated in test mode)
-                    if TEST_MODE:
+                    if CONFIG.test_mode:
                         self.account_balance = 10000.0 + self.stats.total_pnl
                         self.stats.account_balance = self.account_balance
                     
@@ -656,7 +674,7 @@ class TradingBot:
                     live.update(self.generate_ui(ticker, ohlcv, signal, indicators))
 
                     # Sleep for update interval
-                    time.sleep(UPDATE_INTERVAL)
+                    time.sleep(CONFIG.update_interval)
 
                 except KeyboardInterrupt:
                     console.print("\n[bold yellow]Bot stopped by user.[/bold yellow]")
@@ -674,7 +692,7 @@ class TradingBot:
                         console.print("[bold red]Emergency stop activated - Too many consecutive errors[/bold red]")
                     
                     console.print(f"[red]Error: {e}[/red]")
-                    time.sleep(UPDATE_INTERVAL * 2)  # Longer sleep on error
+                    time.sleep(CONFIG.update_interval * 2)  # Longer sleep on error
 
 if __name__ == "__main__":
     bot = TradingBot()

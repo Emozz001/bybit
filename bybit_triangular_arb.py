@@ -1,6 +1,6 @@
 """
-Bybit Triangular Arbitrage Bot - Full System for Demo/Live Trading
------------------------------------------------------------------
+Functional Triangular Arbitrage Bot - Refactored for immutability and performance
+==================================================================================
 Scans all USDT pairs for triangular arbitrage opportunities.
 Executes trades automatically when profit exceeds fees and risk thresholds.
 
@@ -22,48 +22,46 @@ import logging
 import hmac
 import hashlib
 import json
-from typing import Dict, List, Tuple, Optional, Set
+from typing import Dict, List, Tuple, Optional, Set, NamedTuple
 from dataclasses import dataclass, field
 from collections import deque
 from datetime import datetime, timedelta
 import sys
 import os
+from functools import reduce
+from operator import add
+from itertools import filterfalse
 
-# ================= CONFIGURATION =================
-# REPLACE THESE WITH YOUR BYBIT DEMO ACCOUNT CREDENTIALS
-# Get them from: https://testnet.bybit.com/
+# ================= IMMUTABLE CONFIGURATION =================
 API_KEY = os.getenv("BYBIT_API_KEY", "YOUR_BYBIT_DEMO_API_KEY")
 API_SECRET = os.getenv("BYBIT_API_SECRET", "YOUR_BYBIT_DEMO_API_SECRET")
 
-# Set to True ONLY after testing thoroughly on demo
 LIVE_MODE = False  # KEEP FALSE FOR INITIAL TESTING
-
-# Trading Mode
-USE_TESTNET = True  # Use Bybit testnet (demo) - ALWAYS TRUE FOR DEMO ACCOUNT
+USE_TESTNET = True
 BASE_URL = "https://api-testnet.bybit.com" if USE_TESTNET else "https://api.bybit.com"
 
-# Risk Management - CONSERVATIVE SETTINGS FOR SAFETY
-MAX_TRADE_AMOUNT_USDT = float(os.getenv("MAX_TRADE_AMOUNT", "50.0"))  # Amount per arb (lower = safer)
-MIN_PROFIT_PERCENT = float(os.getenv("MIN_PROFIT_PERCENT", "0.3"))    # Min profit % (must cover fees + slippage)
-MAX_DAILY_LOSS_USDT = float(os.getenv("MAX_DAILY_LOSS", "20.0"))      # Stop if daily loss exceeds this
-MAX_DAILY_TRADES = int(os.getenv("MAX_DAILY_TRADES", "20"))           # Max trades per day
-MAX_CONSECUTIVE_ERRORS = int(os.getenv("MAX_ERRORS", "3"))            # Stop after N errors
-MAX_CONSECUTIVE_LOSSES = int(os.getenv("MAX_LOSSES", "5"))            # Stop after N losing trades
-COOLDOWN_AFTER_LOSS_SEC = float(os.getenv("COOLDOWN_SEC", "60.0"))    # Wait time after a loss
 
-# Performance Settings
-SCAN_INTERVAL = float(os.getenv("SCAN_INTERVAL", "2.0"))              # Seconds between scans
-REQUEST_TIMEOUT = int(os.getenv("REQUEST_TIMEOUT", "8"))              # HTTP timeout
-MAX_CONCURRENT_REQUESTS = int(os.getenv("MAX_CONCURRENT", "15"))      # Concurrent API calls
-CACHE_TTL = float(os.getenv("CACHE_TTL", "0.8"))                      # Ticker cache duration
+@dataclass(frozen=True)
+class ArbConfig:
+    """Immutable configuration using frozen dataclass"""
+    max_trade_amount_usdt: float = float(os.getenv("MAX_TRADE_AMOUNT", "50.0"))
+    min_profit_percent: float = float(os.getenv("CONFIG.min_profit_percent", "0.3"))
+    max_daily_loss_usdt: float = float(os.getenv("MAX_DAILY_LOSS", "20.0"))
+    max_daily_trades: int = int(os.getenv("CONFIG.max_daily_trades", "20"))
+    max_consecutive_errors: int = int(os.getenv("MAX_ERRORS", "3"))
+    max_consecutive_losses: int = int(os.getenv("MAX_LOSSES", "5"))
+    cooldown_after_loss_sec: float = float(os.getenv("COOLDOWN_SEC", "60.0"))
+    scan_interval: float = float(os.getenv("CONFIG.scan_interval", "2.0"))
+    request_timeout: int = int(os.getenv("CONFIG.request_timeout", "8"))
+    max_concurrent_requests: int = int(os.getenv("MAX_CONCURRENT", "15"))
+    cache_ttl: float = float(os.getenv("CONFIG.cache_ttl", "0.8"))
+    maker_fee_percent: float = float(os.getenv("MAKER_FEE", "0.1"))
+    taker_fee_percent: float = float(os.getenv("TAKER_FEE", "0.1"))
+    order_type: str = "Market"
+    ioc_order: bool = True
 
-# Fees (Bybit Standard Spot: Maker 0.1%, Taker 0.1%)
-MAKER_FEE_PERCENT = float(os.getenv("MAKER_FEE", "0.1"))
-TAKER_FEE_PERCENT = float(os.getenv("TAKER_FEE", "0.1"))
 
-# Order Settings
-ORDER_TYPE = "Market"  # Use Market orders for speed (or "Limit" for better price)
-IOC_ORDER = True       # Immediate Or Cancel - critical for arb
+CONFIG = ArbConfig()
 
 # Logging
 logging.basicConfig(
@@ -73,11 +71,60 @@ logging.basicConfig(
 )
 logger = logging.getLogger("ArbBot")
 
-# ================= DATA STRUCTURES =================
+# ================= IMMUTABLE DATA STRUCTURES =================
 
-@dataclass
-class Opportunity:
-    symbol_a: str  # e.g., BTC
+class Opportunity(NamedTuple):
+    """Immutable arbitrage opportunity using NamedTuple"""
+    symbol_a: str
+    symbol_b: str
+    path: str
+    expected_profit_pct: float
+    price_a: float
+    price_b: float
+    price_c: float
+    timestamp: float
+    trade_amount: float = CONFIG.max_trade_amount_usdt
+
+
+class TradeRecord(NamedTuple):
+    """Immutable trade record using NamedTuple"""
+    timestamp: float
+    path: str
+    profit_pct: float
+    profit_usdt: float
+    status: str  # 'success', 'loss', 'error'
+
+
+class TradeStats(NamedTuple):
+    """Immutable trading statistics using NamedTuple"""
+    total_scans: int = 0
+    opportunities_found: int = 0
+    trades_executed: int = 0
+    successful_trades: int = 0
+    losing_trades: int = 0
+    total_profit_usdt: float = 0.0
+    daily_pnl: float = 0.0
+    daily_trades: int = 0
+    consecutive_errors: int = 0
+    consecutive_losses: int = 0
+    last_error_time: float = 0.0
+    last_trade_time: float = 0.0
+    last_loss_time: float = 0.0
+    trade_history: Tuple[TradeRecord, ...] = ()
+    start_time: float = field(default_factory=time.time)
+    
+    def win_rate(self) -> float:
+        if self.trades_executed == 0:
+            return 0.0
+        return (self.successful_trades / self.trades_executed) * 100
+    
+    def add_trade(self, record: TradeRecord) -> 'TradeStats':
+        """Return new instance with added trade - immutable update"""
+        new_history = self.trade_history + (record,)
+        # Keep only last 100 trades in memory
+        if len(new_history) > 100:
+            new_history = new_history[-100:]
+        return self._replace(trade_history=new_history)
     symbol_b: str  # e.g., ETH
     path: str      # e.g., USDT -> BTC -> ETH -> USDT
     expected_profit_pct: float
@@ -85,7 +132,7 @@ class Opportunity:
     price_b: float # BTC/ETH (mid)
     price_c: float # ETH/USDT (exit)
     timestamp: float
-    trade_amount: float = MAX_TRADE_AMOUNT_USDT
+    trade_amount: float = CONFIG.max_trade_amount_usdt
     
 @dataclass
 class TradeRecord:
@@ -134,7 +181,7 @@ class BybitArbBot:
         self.tickers: Dict[str, dict] = {}
         self.stats = TradeStats()
         self.running = False
-        self.cache_ttl = CACHE_TTL
+        self.cache_ttl = CONFIG.cache_ttl
         self.last_fetch_time = 0.0
         self.daily_reset_time = time.time()
         
@@ -146,8 +193,8 @@ class BybitArbBot:
             logger.warning("   Get them from: https://testnet.bybit.com/")
             logger.info("   Starting in SIMULATION mode only...")
         
-        connector = aiohttp.TCPConnector(limit=MAX_CONCURRENT_REQUESTS, ttl_dns_cache=300)
-        timeout = aiohttp.ClientTimeout(total=REQUEST_TIMEOUT, connect=5)
+        connector = aiohttp.TCPConnector(limit=CONFIG.max_concurrent_requests, ttl_dns_cache=300)
+        timeout = aiohttp.ClientTimeout(total=CONFIG.request_timeout, connect=5)
         
         headers = {
             "X-BAPI-API-KEY": API_KEY,
@@ -166,9 +213,9 @@ class BybitArbBot:
         logger.info(f"🚀 Bybit Triangular Arb Bot Started ({mode_str} MODE)")
         logger.info("="*60)
         logger.info(f"Base URL: {self.base_url}")
-        logger.info(f"Scan Interval: {SCAN_INTERVAL}s | Min Profit: {MIN_PROFIT_PERCENT}%")
-        logger.info(f"Max Trade Amount: ${MAX_TRADE_AMOUNT_USDT} | Max Daily Loss: ${MAX_DAILY_LOSS_USDT}")
-        logger.info(f"Max Daily Trades: {MAX_DAILY_TRADES} | Cooldown After Loss: {COOLDOWN_AFTER_LOSS_SEC}s")
+        logger.info(f"Scan Interval: {CONFIG.scan_interval}s | Min Profit: {CONFIG.min_profit_percent}%")
+        logger.info(f"Max Trade Amount: ${CONFIG.max_trade_amount_usdt} | Max Daily Loss: ${CONFIG.max_daily_loss_usdt}")
+        logger.info(f"Max Daily Trades: {CONFIG.max_daily_trades} | Cooldown After Loss: {CONFIG.cooldown_after_loss_sec}s")
         logger.info("="*60)
         
         # Load symbols first
@@ -353,10 +400,10 @@ class BybitArbBot:
                 
                 # Deduct Fees (3 trades involved)
                 # Using taker fee for market orders
-                fee_factor = (1 - (TAKER_FEE_PERCENT / 100)) ** 3
+                fee_factor = (1 - (CONFIG.taker_fee_percent / 100)) ** 3
                 net_profit_pct = (final_usdt * fee_factor - 1.0) * 100
                 
-                if net_profit_pct > MIN_PROFIT_PERCENT:
+                if net_profit_pct > CONFIG.min_profit_percent:
                     opp = Opportunity(
                         symbol_a=base_asset,
                         symbol_b=target_asset,
@@ -366,7 +413,7 @@ class BybitArbBot:
                         price_b=mid_price,
                         price_c=exit_price,
                         timestamp=time.time(),
-                        trade_amount=MAX_TRADE_AMOUNT_USDT
+                        trade_amount=CONFIG.max_trade_amount_usdt
                     )
                     opportunities.append(opp)
         
@@ -375,35 +422,35 @@ class BybitArbBot:
     async def execute_trade(self, opp: Opportunity):
         """Execute the arbitrage trade sequence with full risk management"""
         # Check error limit
-        if self.stats.consecutive_errors >= MAX_CONSECUTIVE_ERRORS:
-            logger.critical(f"🛑 Max consecutive errors ({MAX_CONSECUTIVE_ERRORS}) reached. Stopping.")
+        if self.stats.consecutive_errors >= CONFIG.max_consecutive_errors:
+            logger.critical(f"🛑 Max consecutive errors ({CONFIG.max_consecutive_errors}) reached. Stopping.")
             self.running = False
             return
 
         # Check daily loss limit
-        if self.stats.daily_pnl <= -MAX_DAILY_LOSS_USDT:
-            logger.critical(f"🛑 Daily loss limit hit (-${MAX_DAILY_LOSS_USDT:.2f}). Stopping.")
+        if self.stats.daily_pnl <= -CONFIG.max_daily_loss_usdt:
+            logger.critical(f"🛑 Daily loss limit hit (-${CONFIG.max_daily_loss_usdt:.2f}). Stopping.")
             self.running = False
             return
 
         # Check daily trade limit
-        if self.stats.daily_trades >= MAX_DAILY_TRADES:
-            logger.warning(f"⚠️  Daily trade limit ({MAX_DAILY_TRADES}) reached. Skipping.")
+        if self.stats.daily_trades >= CONFIG.max_daily_trades:
+            logger.warning(f"⚠️  Daily trade limit ({CONFIG.max_daily_trades}) reached. Skipping.")
             return
 
         # Check cooldown after loss
         now = time.time()
         if self.stats.last_loss_time > 0:
             time_since_loss = now - self.stats.last_loss_time
-            if time_since_loss < COOLDOWN_AFTER_LOSS_SEC:
-                remaining = COOLDOWN_AFTER_LOSS_SEC - time_since_loss
+            if time_since_loss < CONFIG.cooldown_after_loss_sec:
+                remaining = CONFIG.cooldown_after_loss_sec - time_since_loss
                 if self.stats.total_scans % 50 == 0:  # Log occasionally
                     logger.info(f"⏳ Cooldown active: {remaining:.1f}s remaining...")
                 return
 
         # Check consecutive losses
-        if self.stats.consecutive_losses >= MAX_CONSECUTIVE_LOSSES:
-            logger.critical(f"🛑 Max consecutive losses ({MAX_CONSECUTIVE_LOSSES}) reached. Stopping.")
+        if self.stats.consecutive_losses >= CONFIG.max_consecutive_losses:
+            logger.critical(f"🛑 Max consecutive losses ({CONFIG.max_consecutive_losses}) reached. Stopping.")
             self.running = False
             return
 
@@ -463,7 +510,7 @@ class BybitArbBot:
                 symbol=f"{opp.symbol_a}USDT",
                 side="Buy",
                 qty=opp.trade_amount / opp.price_a,
-                order_type=ORDER_TYPE
+                order_type=CONFIG.order_type
             )
             
             if not leg1_success:
@@ -477,7 +524,7 @@ class BybitArbBot:
                 symbol=f"{opp.symbol_b}{opp.symbol_a}",
                 side="Buy",
                 qty=leg1_qty / opp.price_b,
-                order_type=ORDER_TYPE
+                order_type=CONFIG.order_type
             )
             
             if not leg2_success:
@@ -498,7 +545,7 @@ class BybitArbBot:
                 symbol=f"{opp.symbol_b}USDT",
                 side="Sell",
                 qty=leg2_qty,
-                order_type=ORDER_TYPE
+                order_type=CONFIG.order_type
             )
             
             if not leg3_success:
@@ -564,7 +611,7 @@ class BybitArbBot:
                 "side": side,
                 "orderType": order_type,
                 "qty": str(qty),
-                "timeInForce": "IOC" if IOC_ORDER else "GTC",
+                "timeInForce": "IOC" if CONFIG.ioc_order else "GTC",
                 "marketUnitQuote": "USDT"
             })
             
@@ -642,7 +689,7 @@ class BybitArbBot:
 
             # 3. Rate Limiting / Timing
             elapsed = time.time() - start_time
-            sleep_time = max(0, SCAN_INTERVAL - elapsed)
+            sleep_time = max(0, CONFIG.scan_interval - elapsed)
             if sleep_time > 0:
                 await asyncio.sleep(sleep_time)
 
