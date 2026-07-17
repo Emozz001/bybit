@@ -13,6 +13,7 @@ async performance, and advanced risk management.
 - **Real-time Market Data**: WebSocket streaming with automatic reconnection
 - **REST API Client**: Rate-limited, retry-enabled API client with connection pooling
 - **Modular Design**: Clean separation of concerns with single-responsibility modules
+- **Minimalist Terminal UI**: Modern, beautiful TUI built with Textual framework
 
 ### Trading Features
 - **Triangular Arbitrage**: Automated detection and execution of triangular arbitrage opportunities
@@ -33,6 +34,15 @@ async performance, and advanced risk management.
 - Resource monitoring and throttling
 - Connection pooling and caching
 - Background task management
+- `__slots__` optimization for reduced memory footprint
+- Monotonic clock timing for precise loop control
+
+### User Interface
+- **Minimalist Design**: Clean, distraction-free interface
+- **Real-time Metrics**: Live updates for uptime, scans, latency, CPU/memory usage
+- **Keyboard Shortcuts**: Quick access to common actions
+- **Dark/Light Mode**: Toggle themes on the fly
+- **Activity Log**: Recent trades displayed in real-time
 
 ### Developer Experience
 - Professional logging with loguru
@@ -79,9 +89,26 @@ performance:
 ./install.sh
 # Select option 4: Start Bot
 
-# Or directly
+# Or directly with UI (default)
 python main.py
+
+# Run without UI (headless mode)
+python main.py --no-ui
+
+# Run UI only in demo mode (no trading)
+python main.py --ui-only
 ```
+
+### Keyboard Shortcuts
+
+When the UI is running:
+
+| Key | Action |
+|-----|--------|
+| `Q` | Quit application |
+| `D` | Toggle dark/light theme |
+| `R` | Refresh data |
+| `H` | Show help |
 
 ## Project Structure
 
