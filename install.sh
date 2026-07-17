@@ -202,20 +202,26 @@ create_directories() {
 # =============================================================================
 
 show_menu() {
-    print_header "BYBIT AI TERMINAL INSTALLER"
+    print_header "BYBIT AI TRADING TERMINAL"
     
-    echo "1) Install"
-    echo "2) Update"
-    echo "3) Upgrade Dependencies"
-    echo "4) Start Bot"
-    echo "5) Run Scanner"
-    echo "6) Open Dashboard"
-    echo "7) Backup"
-    echo "8) Restore"
-    echo "9) Database"
-    echo "10) Settings"
-    echo "11) Uninstall"
-    echo "12) Exit"
+    echo "CORE ACTIONS"
+    echo "  1) Start Trading Bot"
+    echo "  2) View Live Dashboard"
+    echo "  3) Run Market Scanner"
+    echo ""
+    echo "MANAGEMENT"
+    echo "  4) Backup Data"
+    echo "  5) Restore Backup"
+    echo "  6) View/Edit Settings"
+    echo ""
+    echo "MAINTENANCE"
+    echo "  7) Update Platform"
+    echo "  8) Upgrade Dependencies"
+    echo "  9) Database Tools"
+    echo ""
+    echo "SYSTEM"
+    echo "  0) Uninstall"
+    echo "  q) Quit"
     echo ""
 }
 
@@ -373,21 +379,20 @@ menu_uninstall() {
 main() {
     while true; do
         show_menu
-        read -p "Select option [1-12]: " choice
+        read -p "Select option: " choice
         
         case $choice in
-            1) menu_install ;;
-            2) menu_update ;;
-            3) menu_upgrade_deps ;;
-            4) menu_start_bot ;;
-            5) menu_scanner ;;
-            6) menu_dashboard ;;
-            7) menu_backup ;;
-            8) menu_restore ;;
+            1) menu_start_bot ;;
+            2) menu_dashboard ;;
+            3) menu_scanner ;;
+            4) menu_backup ;;
+            5) menu_restore ;;
+            6) menu_settings ;;
+            7) menu_update ;;
+            8) menu_upgrade_deps ;;
             9) menu_database ;;
-            10) menu_settings ;;
-            11) menu_uninstall ;;
-            12) 
+            0) menu_uninstall ;;
+            q|Q) 
                 print_info "Goodbye!"
                 exit 0
                 ;;
