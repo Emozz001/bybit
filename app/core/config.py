@@ -1,6 +1,7 @@
 """
 Configuration management for Bybit AI Trading Platform.
 Uses YAML configuration with environment variable overrides.
+Supports .env file for sensitive credentials.
 """
 
 import os
@@ -9,6 +10,13 @@ from pathlib import Path
 from typing import Optional, Dict, Any, List
 from dataclasses import dataclass, field
 from datetime import datetime
+
+# Load .env file if it exists
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass  # python-dotenv not installed, will use system env vars only
 
 
 @dataclass
@@ -268,21 +276,40 @@ class Config:
     def _apply_env_overrides(cls, data: Dict[str, Any]) -> Dict[str, Any]:
         """Apply environment variable overrides to configuration."""
         env_mapping = {
+            # Exchange credentials (from .env or system env)
             "BYBIT_API_KEY": ("exchange", "api_key"),
             "BYBIT_SECRET_KEY": ("exchange", "secret_key"),
             "BYBIT_TESTNET": ("exchange", "testnet"),
+            
+            # Trading settings
             "TRADING_MODE": ("trading", "mode"),
             "MIN_NET_PROFIT_PCT": ("trading", "min_net_profit_pct"),
             "MAX_TRADE_SIZE_USDT": ("trading", "max_trade_size_usdt"),
-            "DAILY_LOSS_LIMIT_USDT": ("risk", "max_daily_loss_usdt"),
+            "DAILY_LOSS_LIMIT_USDT": ("trading", "daily_loss_limit_usdt"),
+            "DEFAULT_LEVERAGE": ("trading", "default_leverage"),
+            
+            # Risk management
+            "MAX_DAILY_LOSS_USDT": ("risk", "max_daily_loss_usdt"),
             "MAX_LEVERAGE": ("risk", "max_leverage"),
+            "KILL_SWITCH_ENABLED": ("risk", "kill_switch_enabled"),
+            
+            # Logging & Performance
             "LOG_LEVEL": ("logging", "level"),
             "PERFORMANCE_PROFILE": ("performance", "profile"),
+            
+            # Notifications
+            "NOTIFICATIONS_ENABLED": ("notifications", "enabled"),
+            "TELEGRAM_BOT_TOKEN": ("notifications", "telegram_bot_token"),
+            "TELEGRAM_CHAT_ID": ("notifications", "telegram_chat_id"),
+            "DISCORD_WEBHOOK_URL": ("notifications", "discord_webhook_url"),
+            
+            # Database
+            "DATABASE_PATH": ("database", "path"),
         }
         
         for env_var, (section, key) in env_mapping.items():
             value = os.getenv(env_var)
-            if value is not None:
+            if value is not None and value.strip():  # Only apply if not empty
                 if section not in data:
                     data[section] = {}
                 
@@ -292,7 +319,7 @@ class Config:
                         value = True
                     elif value.lower() == "false":
                         value = False
-                    elif value.replace(".", "").isdigit():
+                    elif value.replace(".", "").replace("-", "").isdigit():
                         value = float(value) if "." in value else int(value)
                 
                 data[section][key] = value

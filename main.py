@@ -124,18 +124,18 @@ class TradingPlatform:
         try:
             # Initialize API client if credentials available
             if self.config.exchange.api_key and self.config.exchange.secret_key:
-                self.api_client = BybitAPIClient(self.config.exchange)
-                await self.api_client.connect()
+                self._api_client = BybitAPIClient(self.config.exchange)
+                await self._api_client.connect()
                 logger.info("API client connected")
                 
                 # Fetch symbols
-                symbols = await self.api_client.get_symbols()
+                symbols = await self._api_client.get_symbols()
                 logger.info(f"Loaded {len(symbols)} symbols")
             else:
                 logger.warning("No API credentials configured - running in read-only mode")
 
             # Initialize WebSocket manager
-            self.ws_manager = WebSocketManager(self.config)
+            self._ws_manager = WebSocketManager(self.config)
             
             # Update system health
             self.system_health.is_healthy = True
