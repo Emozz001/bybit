@@ -1,13 +1,40 @@
 ```
-# Compiled Python files
-*.pyc
+# Python
 __pycache__/
-
-# Environment files
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+.ENV
+.ENV.local
 .env
+.env.local
 .env.*
 
-# Logs and temporary files
+# Build artifacts
+build/
+dist/
+*.egg-info/
+
+# Logs
 *.log
+
+# Coverage
+.coverage
+coverage/
+htmlcov/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
 *.tmp
+
+# OS
+.DS_Store
+Thumbs.db
 ```
