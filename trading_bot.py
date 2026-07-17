@@ -234,7 +234,12 @@ class TradingBot:
 
     def generate_ui(self, ticker, ohlcv, signal, indicators):
         """Generate the Rich Terminal UI"""
+        # Create main layout
         layout = Layout()
+        
+        # Create sub-layouts
+        market_indicator_layout = Layout()
+        position_stats_layout = Layout()
 
         # Header
         header_text = Text()
@@ -317,19 +322,31 @@ class TradingBot:
             border_style="red"
         )
 
-        # Layout assembly
+        # Layout assembly - split into rows first
         layout.split(
             Layout(header, size=4),
-            Layout(
-                Layout(market_table, ratio=1),
-                Layout(indicator_table, ratio=1),
-            ),
-            Layout(
-                Layout(position_panel, ratio=1),
-                Layout(stats_panel, ratio=1),
-            ),
+            Layout(name="middle"),
             Layout(risk_panel, size=6),
         )
+        
+        # Split middle row into two columns
+        layout["middle"].split_row(
+            Layout(name="left"),
+            Layout(name="right"),
+        )
+        
+        # Split left column into market and indicators
+        layout["left"].split(
+            Layout(market_table),
+            Layout(indicator_table),
+        )
+        
+        # Split right column into position and stats
+        layout["right"].split(
+            Layout(position_panel),
+            Layout(stats_panel),
+        )
+        
         return layout
 
     def run(self):

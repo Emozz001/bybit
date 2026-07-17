@@ -31,8 +31,10 @@ fi
 
 echo ""
 echo "Installing required packages..."
-pip3 install --upgrade pip
-pip3 install ccxt rich
+pip3 install --upgrade pip setuptools wheel
+pip3 uninstall ccxt -y || true
+pip3 install ccxt --no-cache-dir
+pip3 install rich
 
 echo ""
 echo "✓ Dependencies installed successfully!"
