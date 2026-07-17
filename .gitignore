@@ -3,16 +3,17 @@
 *.pyc
 __pycache__/
 
-# Logs and temporary files
+# Logs and temp files
 *.log
 *.tmp
+*.swp
 
 # Environment files
 .env
 .env.local
 *.env.*
 
-# Editors/IDE
+# Editors
 .vscode/
 .idea/
 
@@ -26,16 +27,13 @@ dist/
 build/
 target/
 
-# Coverage reports
+# Coverage
 .coverage
 coverage/
 htmlcov/
 
-# Python cache
+# Cache directories
 .mypy_cache/
 .pytest_cache/
-
-# System files
-.DS_Store
-Thumbs.db
+.gradle/
 ```
