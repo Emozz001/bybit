@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Bybit Trading Bot - Setup and Run Script
-# This script installs dependencies and runs the trading bot
+# This script installs dependencies and provides a menu to run different Python files
 
 set -e  # Exit on error
 
@@ -35,6 +35,7 @@ pip3 install --upgrade pip setuptools wheel
 pip3 uninstall ccxt -y || true
 pip3 install ccxt --no-cache-dir
 pip3 install rich
+pip3 install python-dotenv
 
 echo ""
 echo "✓ Dependencies installed successfully!"
@@ -68,12 +69,58 @@ else
     echo ""
 fi
 
+# Display menu of available Python files
 echo "========================================="
-echo "  Starting Trading Bot..."
+echo "  Available Python Scripts"
 echo "========================================="
-echo ""
-echo "Press Ctrl+C to stop the bot"
 echo ""
 
-# Run the trading bot
-python3 trading_bot.py
+# Array to store available scripts
+declare -a scripts=()
+script_index=1
+
+# Find all Python files in current directory
+for pyfile in *.py; do
+    if [ -f "$pyfile" ]; then
+        scripts+=("$pyfile")
+        echo "  $script_index. $pyfile"
+        ((script_index++))
+    fi
+done
+
+echo ""
+echo "  0. Exit"
+echo ""
+
+# Get user selection
+while true; do
+    read -p "Enter the number of the script to run (0 to exit): " choice
+    
+    # Validate input is a number
+    if ! [[ "$choice" =~ ^[0-9]+$ ]]; then
+        echo "❌ Invalid input. Please enter a number."
+        continue
+    fi
+    
+    # Check if within valid range
+    if [ "$choice" -eq 0 ]; then
+        echo "Exiting..."
+        exit 0
+    elif [ "$choice" -ge 1 ] && [ "$choice" -lt "$script_index" ]; then
+        selected_script="${scripts[$((choice-1))]}"
+        break
+    else
+        echo "❌ Invalid selection. Please choose a number between 1 and $((script_index-1))."
+    fi
+done
+
+echo ""
+echo "========================================="
+echo "  Running: $selected_script"
+echo "========================================="
+echo ""
+echo "Press Ctrl+C to stop the script"
+echo ""
+
+# Run the selected Python script
+python3 "$selected_script"

@@ -32,12 +32,21 @@ console = Console()
 # IMMUTABLE CONFIGURATION
 # =============================================================================
 
-BYBIT_API_KEY = os.getenv("BYBIT_API_KEY", "")
-BYBIT_SECRET = os.getenv("BYBIT_SECRET", "")
+BYBIT_API_KEY = os.getenv("BYBIT_API_KEY")
+BYBIT_SECRET = os.getenv("BYBIT_SECRET")
+
+# Validate API keys on startup
+if not BYBIT_API_KEY or not BYBIT_SECRET:
+    raise ValueError(
+        "API keys not configured. Set BYBIT_API_KEY and BYBIT_SECRET "
+        "environment variables before running. Example:\n"
+        "  export BYBIT_API_KEY='your_actual_api_key'\n"
+        "  export BYBIT_SECRET='your_actual_secret'"
+    )
 
 @dataclass(frozen=True)
 class Config:
-    """Immutable configuration using frozen dataclass"""
+    """Immutable configuration using frozen dataclass with validation"""
     symbol: str = "BTC/USDT"
     timeframe: str = "5m"
     leverage: int = 3
@@ -53,6 +62,21 @@ class Config:
     emergency_stop_enabled: bool = True
     max_slippage_pct: float = 0.005
     test_mode: bool = True
+    
+    def __post_init__(self):
+        """Validate configuration values are within safe ranges"""
+        if not 0 < self.leverage <= 20:
+            raise ValueError(f"Leverage must be between 1 and 20, got {self.leverage}")
+        if not 0 < self.risk_per_trade <= 0.1:
+            raise ValueError(f"Risk per trade must be between 0 and 10%, got {self.risk_per_trade*100}%")
+        if not 0 < self.stop_loss_pct <= 0.1:
+            raise ValueError(f"Stop loss must be between 0 and 10%, got {self.stop_loss_pct*100}%")
+        if not 0 < self.take_profit_pct <= 0.5:
+            raise ValueError(f"Take profit must be between 0 and 50%, got {self.take_profit_pct*100}%")
+        if self.max_daily_loss_pct <= 0:
+            raise ValueError("Max daily loss must be positive")
+        if self.cache_max_size <= 0:
+            raise ValueError("Cache max size must be positive")
 
 CONFIG = Config()
 
@@ -186,6 +210,7 @@ class TradingBot:
         self.emergency_stop = False
         self.last_error_time = 0.0
         self.consecutive_errors = 0
+        self.start_time = time.time()
 
         self.running = True
         
@@ -193,6 +218,9 @@ class TradingBot:
         self.data_cache = CachedData()
         self.last_ticker_fetch = 0.0
         self.ticker_cache_ttl = 1.0  # Cache ticker for 1 second
+        
+        # Daily reset tracking to prevent race conditions
+        self.last_daily_reset = datetime.min.date()
         
         # Pre-calculate constants to avoid repeated computation
         self._stop_loss_multiplier_buy = 1 - CONFIG.stop_loss_pct
@@ -204,18 +232,30 @@ class TradingBot:
             console.print("[bold yellow]WARNING: RUNNING IN TEST MODE - No real trades will be executed[/bold yellow]")
 
     def check_connection(self) -> bool:
-        """Verify API connection with error handling"""
-        try:
-            markets = self.exchange.load_markets()
-            balance = self.exchange.fetch_balance()
-            self.account_balance = float(balance.get('USDT', {}).get('free', 0))
-            return True
-        except Exception as e:
-            console.print(f"[red]Connection error: {e}[/red]")
-            return False
+        """Verify API connection with error handling and retry logic"""
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                markets = self.exchange.load_markets()
+                balance = self.exchange.fetch_balance()
+                self.account_balance = float(balance.get('USDT', {}).get('free', 0))
+                return True
+            except ccxt.NetworkError as e:
+                if attempt == max_retries - 1:
+                    logger.error(f"Connection failed after {max_retries} attempts: {e}")
+                    console.print(f"[red]Connection error: {e}[/red]")
+                    return False
+                wait_time = 2 ** attempt
+                logger.warning(f"Network error, retrying in {wait_time}s ({attempt + 1}/{max_retries}): {e}")
+                time.sleep(wait_time)
+            except Exception as e:
+                logger.error(f"Unexpected connection error: {e}")
+                console.print(f"[red]Connection error: {e}[/red]")
+                return False
+        return False
 
     def get_market_data(self) -> Tuple[Optional[Dict], Optional[List]]:
-        """Fetch ticker and OHLCV data with caching"""
+        """Fetch ticker and OHLCV data with caching and retry logic"""
         current_time = time.time()
         ticker = None
         ohlcv = None
@@ -234,7 +274,12 @@ class TradingBot:
                 self.data_cache.update(ohlcv)
             
             return ticker, ohlcv
+        except ccxt.NetworkError as e:
+            logger.warning(f"Network error fetching market data: {e}")
+            console.print(f"[yellow]Network warning: {e}[/yellow]")
+            return None, None
         except Exception as e:
+            logger.warning(f"Data fetch warning: {e}")
             console.print(f"[yellow]Data fetch warning: {e}[/yellow]")
             return None, None
 
@@ -357,8 +402,23 @@ class TradingBot:
                 )
                 return True
             
-            # Live trading execution with slippage check
-            order = self.exchange.create_order(CONFIG.symbol, 'market', side, contract_size)
+            # Live trading execution with retry logic and slippage check
+            max_retries = 3
+            order = None
+            for attempt in range(max_retries):
+                try:
+                    order = self.exchange.create_order(CONFIG.symbol, 'market', side, contract_size)
+                    break
+                except ccxt.NetworkError as e:
+                    if attempt == max_retries - 1:
+                        raise
+                    logger.warning(f"Network error during order execution, retrying ({attempt + 1}/{max_retries}): {e}")
+                    time.sleep(2 ** attempt)  # Exponential backoff
+            
+            if not order:
+                logger.error("Order execution failed after all retries")
+                return False
+                
             entry_price = order.get('average', price)
             
             # Check slippage
@@ -366,7 +426,10 @@ class TradingBot:
             if slippage > CONFIG.max_slippage_pct:
                 console.print(f"[red]High slippage detected: {slippage*100:.3f}% - Closing immediately[/red]")
                 close_side = 'sell' if side == 'buy' else 'buy'
-                self.exchange.create_order(CONFIG.symbol, 'market', close_side, contract_size)
+                try:
+                    self.exchange.create_order(CONFIG.symbol, 'market', close_side, contract_size)
+                except Exception as close_error:
+                    logger.error(f"Failed to close high-slippage position: {close_error}")
                 return False
             
             self.position = Position.create(side, entry_price, contract_size, stop_loss, take_profit)
@@ -379,6 +442,21 @@ class TradingBot:
             console.print(f"[green]SL: ${stop_loss:.2f} | TP: ${take_profit:.2f}[/green]")
             return True
             
+        except ccxt.InsufficientFunds as e:
+            logger.error(f"Insufficient funds: {e}")
+            console.print(f"[red]Insufficient funds: {e}[/red]")
+            self.emergency_stop = True
+            return False
+        except ccxt.InvalidOrder as e:
+            logger.error(f"Invalid order parameters: side={side}, size={contract_size}, price={price} - {e}")
+            console.print(f"[red]Invalid order: {e}[/red]")
+            return False
+        except ccxt.NetworkError as e:
+            logger.error(f"Network error during trade execution: {e}")
+            console.print(f"[red]Network error: {e}[/red]")
+            self.consecutive_errors += 1
+            self.last_error_time = time.time()
+            return False
         except Exception as e:
             self.consecutive_errors += 1
             self.last_error_time = time.time()
@@ -663,11 +741,11 @@ class TradingBot:
                         self.account_balance = 10000.0 + self.stats.total_pnl
                         self.stats.account_balance = self.account_balance
                     
-                    # Reset daily counters at midnight (simplified check)
-                    current_hour = datetime.now().hour
-                    if current_hour == 0 and self.stats.daily_trades > 0:
-                        # Simple daily reset logic
-                        self.stats.reset_daily()
+                    # Reset daily counters at midnight (improved logic to prevent race conditions)
+                    current_date = datetime.now().date()
+                    if current_date > self.last_daily_reset and datetime.now().hour == 0:
+                        self.stats = self.stats.reset_daily()
+                        self.last_daily_reset = current_date
                         console.print("[cyan]Daily statistics reset[/cyan]")
 
                     # Render UI
