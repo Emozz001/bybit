@@ -89,7 +89,10 @@ performance:
 ./install.sh
 # Select option 4: Start Bot
 
-# Or directly with UI (default)
+# Or directly with modern TUI (recommended)
+python main.py --tui
+
+# Or directly with legacy UI (default)
 python main.py
 
 # Run without UI (headless mode)
@@ -99,16 +102,52 @@ python main.py --no-ui
 python main.py --ui-only
 ```
 
-### Keyboard Shortcuts
+### Modern TUI Features
 
-When the UI is running:
+The new Terminal User Interface provides:
+
+- **Keyboard-driven navigation**: Use numbers (1-9, 0) to navigate menus
+- **Beautiful ASCII banners**: Each screen has its own unique banner
+- **Real-time dashboard**: View balance, PNL, positions, and bot status
+- **Status indicators**: Visual icons for connection and operation status
+- **Confirmation dialogs**: Simple Y/N confirmations for critical actions
+- **Help system**: Press 'H' anytime for keyboard shortcuts
+- **Quick access keys**: D (Dashboard), T (Trading), S (Settings), L (Logs)
+
+#### Main Menu
+
+```
+██████╗ ██╗   ██╗██████╗ ██╗████████╗
+██╔══██╗╚██╗ ██╔╝██╔══██╗██║╚══██╔══╝
+██████╔╝ ╚████╔╝ ██████╔╝██║   ██║
+██╔══██╗  ╚██╔╝  ██╔══██╗██║   ██║
+██████╔╝   ██║   ██████╔╝██║   ██║
+╚═════╝    ╚═╝   ╚═════╝ ╚═╝   ╚═╝
+
+AI Trading Platform v2.0
+
+[1] Dashboard        - View portfolio and performance
+[2] Futures Trading  - Manual and automated trading
+[3] Spot Trading     - Spot market operations
+...
+[0] Exit             - Close the application
+```
+
+#### Keyboard Shortcuts
 
 | Key | Action |
 |-----|--------|
+| `0` | Go back / Exit current screen |
+| `1-9` | Select menu items |
 | `Q` | Quit application |
-| `D` | Toggle dark/light theme |
+| `D` | Open Dashboard |
+| `T` | Open Trading |
+| `S` | Open Settings |
+| `L` | Open Logs |
+| `H` | Show Help |
 | `R` | Refresh data |
-| `H` | Show help |
+| `Y` | Confirm action |
+| `N` | Cancel action |
 
 ## Project Structure
 
