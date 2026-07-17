@@ -116,6 +116,38 @@ upgrade_dependencies() {
 create_config() {
     print_info "Creating configuration..."
     
+    # Create .env file from example if it doesn't exist
+    if [ ! -f ".env" ]; then
+        if [ -f ".env.example" ]; then
+            cp .env.example .env
+            print_success ".env file created from .env.example"
+            print_warning "Please edit .env with your API credentials before running"
+        else
+            cat > .env << 'ENV_EOF'
+# Bybit API Credentials
+BYBIT_API_KEY=your_api_key_here
+BYBIT_API_SECRET=your_api_secret_here
+
+# Trading Configuration
+TRADING_SYMBOL=BTCUSDT
+TRADING_AMOUNT=0.001
+MAX_POSITION_SIZE=0.01
+
+# System Settings
+LOG_LEVEL=INFO
+UI_ENABLED=true
+HEALTH_CHECK_INTERVAL=5
+
+# Database (Optional)
+DB_PATH=./data/trading.db
+ENV_EOF
+            print_success ".env file created"
+            print_warning "Please edit .env with your API credentials before running"
+        fi
+    else
+        print_success ".env file already exists"
+    fi
+    
     if [ ! -f "config/config.yaml" ]; then
         mkdir -p config
         
@@ -230,8 +262,8 @@ menu_install() {
     print_success "Installation complete!"
     echo ""
     echo "Next steps:"
-    echo "  1. Edit config/config.yaml with your settings"
-    echo "  2. Add API credentials to .env file or config.yaml"
+    echo "  1. Edit .env file with your Bybit API credentials"
+    echo "  2. Optionally edit config/config.yaml for advanced settings"
     echo "  3. Run './install.sh' and select option 4 to start"
 }
 
@@ -343,12 +375,29 @@ menu_database() {
 menu_settings() {
     print_header "SETTINGS"
     
-    echo "Current configuration:"
+    echo "Current .env configuration:"
+    if [ -f ".env" ]; then
+        grep -v "^#" .env | grep -v "^$" | head -10
+        if [ $(wc -l < .env) -gt 10 ]; then
+            echo "... (showing first 10 lines)"
+        fi
+    else
+        echo "No .env file found"
+    fi
+    
+    echo ""
+    echo "Current config.yaml:"
     cat config/config.yaml 2>/dev/null || echo "No configuration found"
     echo ""
-    read -p "Edit config? (y/n): " edit
+    read -p "Edit .env file? (y/n): " edit_env
     
-    if [ "$edit" = "y" ] || [ "$edit" = "Y" ]; then
+    if [ "$edit_env" = "y" ] || [ "$edit_env" = "Y" ]; then
+        ${EDITOR:-nano} .env
+    fi
+    
+    read -p "Edit config.yaml? (y/n): " edit_config
+    
+    if [ "$edit_config" = "y" ] || [ "$edit_config" = "Y" ]; then
         ${EDITOR:-nano} config/config.yaml
     fi
 }
