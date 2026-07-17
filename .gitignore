@@ -9,8 +9,8 @@ __pycache__/
 *.log
 logs/
 
-# Environment
-.env
-.env.local
-*.env.*
+# Dependencies
+.venv/
+venv/
+env/
 ```

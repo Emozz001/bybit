@@ -3,19 +3,19 @@ Terminal UI for Bybit AI Trading Platform.
 Minimalist, modern design using Textual framework.
 """
 
+import asyncio
 from datetime import datetime
-from typing import Optional, Dict, Any
+from typing import Any, Dict, Optional
 
-from textual.app import App, ComposeResult
-from textual.containers import Container, Horizontal, Vertical, Grid
-from textual.widgets import Header, Footer, Static, Label, ProgressBar
-from textual.binding import Binding
-from textual.reactive import reactive
-from textual import work
-
+from rich.align import Align
 from rich.panel import Panel
 from rich.text import Text
-from rich.align import Align
+from textual import work
+from textual.app import App, ComposeResult
+from textual.binding import Binding
+from textual.containers import Container, Horizontal
+from textual.reactive import reactive
+from textual.widgets import Footer, Header, Label, Static
 
 
 class MinimalHeader(Header):
@@ -359,10 +359,6 @@ class TradingPlatformApp(App):
                 main_screen.ws_connected = True
             else:
                 main_screen.ws_connected = False
-
-
-# Import asyncio for the background task
-import asyncio
 
 
 def run_ui(platform=None):
