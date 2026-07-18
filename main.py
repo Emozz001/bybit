@@ -29,7 +29,7 @@ from app.core.models import SystemHealth
 from app.api.client import BybitAPIClient
 from app.exchange.websocket import WebSocketManager
 from app.ui.terminal import TradingPlatformApp, run_ui
-from app.ui.tui_app import BybitTUIApp, main as run_tui
+from app.ui.tui_app import BybitTUIApp, main as run_tui_standalone, run_tui_sync
 
 
 class TradingPlatform:
@@ -292,13 +292,41 @@ class TradingPlatform:
         logger.info(f"Shutdown complete - Total uptime: {uptime}")
 
 
+def _run_tui_mode():
+    """Run TUI mode - completely separate from async trading loop.
+    
+    This runs in a fresh Python interpreter context to avoid event loop conflicts.
+    TUI requires the main thread for signal handling.
+    """
+    try:
+        # Load configuration
+        config = get_config()
+        
+        # Validate for live mode
+        if config.trading.mode == "live":
+            config.validate_for_live_trading()
+        
+        logger.info("Starting modern Terminal User Interface...")
+        
+        # Create platform instance (without auto-initializing async components)
+        platform = TradingPlatform(config, enable_ui=False)
+        
+        # Run TUI - it will handle its own lifecycle
+        run_tui_sync(platform=platform)
+        
+    except KeyboardInterrupt:
+        logger.info("Interrupted by user")
+    except Exception as e:
+        logger.error(f"Fatal error: {e}")
+        sys.exit(1)
+
+
 async def main():
-    """Main entry point."""
+    """Main entry point for normal trading operation."""
     # Parse command line arguments
     parser = argparse.ArgumentParser(description="Bybit AI Trading Platform")
     parser.add_argument("--no-ui", action="store_true", help="Disable terminal UI")
     parser.add_argument("--ui-only", action="store_true", help="Run UI only without trading")
-    parser.add_argument("--tui", action="store_true", help="Run modern TUI interface")
     args = parser.parse_args()
     
     try:
@@ -308,17 +336,6 @@ async def main():
         # Validate for live mode
         if config.trading.mode == "live":
             config.validate_for_live_trading()
-        
-        # Run modern TUI if requested (MUST be in main thread for signal handling)
-        if args.tui:
-            logger.info("Starting modern Terminal User Interface...")
-            # Create platform but don't start trading loop yet
-            platform = TradingPlatform(config, enable_ui=False)
-            await platform.initialize()
-            
-            # Run TUI in main thread with platform instance
-            run_tui(platform=platform)
-            return
         
         if args.ui_only:
             logger.info("Running UI in standalone demo mode...")
@@ -351,4 +368,8 @@ async def main():
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    # Check if we're running TUI mode - must use separate execution path
+    if "--tui" in sys.argv:
+        _run_tui_mode()
+    else:
+        asyncio.run(main())
