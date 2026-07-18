@@ -2,6 +2,11 @@
 Configuration management for Bybit AI Trading Platform.
 Uses YAML configuration with environment variable overrides.
 Supports .env file for sensitive credentials.
+
+Performance optimizations:
+- Singleton pattern with cached instance
+- Lazy loading of configuration
+- Pre-computed type conversions
 """
 
 import os
@@ -11,6 +16,7 @@ from typing import Optional, Dict, Any, List
 from dataclasses import dataclass, field
 from datetime import datetime
 
+
 # Load .env file if it exists
 try:
     from dotenv import load_dotenv
@@ -19,9 +25,10 @@ except ImportError:
     pass  # python-dotenv not installed, will use system env vars only
 
 
-@dataclass
+@dataclass(frozen=True)
 class ExchangeConfig:
     """Exchange API configuration."""
+    __slots__ = ()
     name: str = "bybit"
     api_key: str = ""
     secret_key: str = ""
@@ -36,9 +43,10 @@ class ExchangeConfig:
         return cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})
 
 
-@dataclass
+@dataclass(frozen=True)
 class TradingConfig:
     """Trading parameters configuration."""
+    __slots__ = ()
     mode: str = "paper"  # paper, live
     min_net_profit_pct: float = 0.1
     max_slippage_pct: float = 0.5
@@ -57,9 +65,10 @@ class TradingConfig:
         return cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})
 
 
-@dataclass
+@dataclass(frozen=True)
 class RiskConfig:
     """Risk management configuration."""
+    __slots__ = ()
     max_daily_loss_usdt: float = 100.0
     max_daily_loss_pct: float = 5.0
     max_drawdown_pct: float = 20.0
@@ -79,9 +88,10 @@ class RiskConfig:
         return cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})
 
 
-@dataclass
+@dataclass(frozen=True)
 class DatabaseConfig:
     """Database configuration."""
+    __slots__ = ()
     path: str = "data/bybit_ai.db"
     backup_enabled: bool = True
     backup_interval_hours: int = 24
@@ -92,9 +102,10 @@ class DatabaseConfig:
         return cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})
 
 
-@dataclass
+@dataclass(frozen=True)
 class LoggingConfig:
     """Logging configuration."""
+    __slots__ = ()
     level: str = "INFO"
     console_output: bool = True
     file_output: bool = True
@@ -107,9 +118,10 @@ class LoggingConfig:
         return cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})
 
 
-@dataclass
+@dataclass(frozen=True)
 class NotificationConfig:
     """Notification configuration."""
+    __slots__ = ()
     enabled: bool = False
     telegram_bot_token: Optional[str] = None
     telegram_chat_id: Optional[str] = None
@@ -140,54 +152,57 @@ class PerformanceConfig:
     background_tasks_enabled: bool = True
     analytics_enabled: bool = True
     
+    # Pre-defined profiles as class attribute for faster lookup
+    _PROFILES: Dict[str, Dict[str, Any]] = {
+        "low": {
+            "max_cpu_percent": 15.0,
+            "max_memory_mb": 256,
+            "websocket_ping_interval": 60,
+            "scanner_refresh_ms": 500,
+            "max_concurrent_requests": 2,
+            "cache_ttl_seconds": 600,
+            "background_tasks_enabled": False,
+            "analytics_enabled": False,
+        },
+        "balanced": {
+            "max_cpu_percent": 25.0,
+            "max_memory_mb": 512,
+            "websocket_ping_interval": 30,
+            "scanner_refresh_ms": 100,
+            "max_concurrent_requests": 5,
+            "cache_ttl_seconds": 300,
+            "background_tasks_enabled": True,
+            "analytics_enabled": True,
+        },
+        "high": {
+            "max_cpu_percent": 50.0,
+            "max_memory_mb": 1024,
+            "websocket_ping_interval": 15,
+            "scanner_refresh_ms": 50,
+            "max_concurrent_requests": 10,
+            "cache_ttl_seconds": 120,
+            "background_tasks_enabled": True,
+            "analytics_enabled": True,
+        },
+    }
+    
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "PerformanceConfig":
         return cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})
     
     def apply_profile(self, profile_name: str):
-        """Apply a predefined performance profile."""
-        profiles = {
-            "low": {
-                "max_cpu_percent": 15.0,
-                "max_memory_mb": 256,
-                "websocket_ping_interval": 60,
-                "scanner_refresh_ms": 500,
-                "max_concurrent_requests": 2,
-                "cache_ttl_seconds": 600,
-                "background_tasks_enabled": False,
-                "analytics_enabled": False,
-            },
-            "balanced": {
-                "max_cpu_percent": 25.0,
-                "max_memory_mb": 512,
-                "websocket_ping_interval": 30,
-                "scanner_refresh_ms": 100,
-                "max_concurrent_requests": 5,
-                "cache_ttl_seconds": 300,
-                "background_tasks_enabled": True,
-                "analytics_enabled": True,
-            },
-            "high": {
-                "max_cpu_percent": 50.0,
-                "max_memory_mb": 1024,
-                "websocket_ping_interval": 15,
-                "scanner_refresh_ms": 50,
-                "max_concurrent_requests": 10,
-                "cache_ttl_seconds": 120,
-                "background_tasks_enabled": True,
-                "analytics_enabled": True,
-            },
-        }
-        
-        if profile_name in profiles:
-            for key, value in profiles[profile_name].items():
+        """Apply a predefined performance profile (optimized)."""
+        profile_settings = self._PROFILES.get(profile_name)
+        if profile_settings:
+            for key, value in profile_settings.items():
                 setattr(self, key, value)
             self.profile = profile_name
 
 
-@dataclass
+@dataclass(frozen=True)
 class ScannerConfig:
     """Market scanner configuration."""
+    __slots__ = ()
     enabled: bool = True
     scan_types: List[str] = field(default_factory=lambda: [
         "volatility", "liquidity", "breakout", "reversal",
@@ -216,9 +231,10 @@ class ScannerConfig:
         return cls(**filtered)
 
 
-@dataclass
+@dataclass(frozen=True)
 class StrategyConfig:
     """Strategy configuration."""
+    __slots__ = ()
     enabled_strategies: List[str] = field(default_factory=list)
     strategy_parameters: Dict[str, Dict[str, Any]] = field(default_factory=dict)
     
@@ -230,9 +246,10 @@ class StrategyConfig:
         )
 
 
-@dataclass
+@dataclass(frozen=True)
 class Config:
     """Main application configuration."""
+    __slots__ = ()
     exchange: ExchangeConfig = field(default_factory=ExchangeConfig)
     trading: TradingConfig = field(default_factory=TradingConfig)
     risk: RiskConfig = field(default_factory=RiskConfig)
@@ -245,7 +262,7 @@ class Config:
     
     @classmethod
     def load_from_yaml(cls, config_path: str = "config/config.yaml") -> "Config":
-        """Load configuration from YAML file."""
+        """Load configuration from YAML file (optimized)."""
         config_file = Path(config_path)
         
         if not config_file.exists():
